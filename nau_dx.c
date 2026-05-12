@@ -98,8 +98,8 @@
 #define MAX_ENEMIES        8   // CPC: WAVE_PLAN_MAX=8
 #define ENEMY_W            12
 #define ENEMY_H            12
-#define ENEMY_BOSS_W       16   // Boss is 16x16
-#define ENEMY_BOSS_H       16
+#define ENEMY_BOSS_W       32   // Boss is 32x32 (4 x 16x16 sprites)
+#define ENEMY_BOSS_H       32
 #define ENEMYSHOT_W        2
 #define ENEMYSHOT_H        6
 #define ENEMYSHOT_SPEED_Y  3
@@ -377,15 +377,76 @@ static const u8 g_EnemyBomberRed[32] = {
     0xCC,0x0C,0x18,0xF0,0xF0,0xC0,0x00,0x00
 };
 
-// Boss sprite (mothership) - 16x16, cyan + white outline with core
-// White layer: outline + body structure
+// Boss sprite 32x32 = 4 x 16x16 sprites (quad layout TL, TR, BL, BR)
+// Based on CPC boss: Cyan outline + White fill + Orange + Yellow + Red core
+
+// Boss Top-Left (cyan outline + white) - Layer 1 (white)
+static const u8 g_BossTLWhite[32] = {
+    0x00,0x00,0x00,0x00,0x00,0x07,0x0F,0x1F,
+    0x1F,0x1F,0x0F,0x07,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x00,0xE0,0xF0,0xF8,
+    0xF8,0xF8,0xF0,0xE0,0x00,0x00,0x00,0x00
+};
+// Boss Top-Left (cyan) - Layer 2 (cyan/accent)
+static const u8 g_BossTLCyan[32] = {
+    0x00,0x00,0x00,0x0F,0x0F,0x08,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x08,0x0F,0x00,0x00,
+    0x00,0x00,0x00,0xF0,0xF0,0x10,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x10,0xF0,0x00,0x00
+};
+
+// Boss Top-Right (white fill + cyan outline) - Layer 1 (white)
+static const u8 g_BossTRWhite[32] = {
+    0x00,0x00,0x00,0x00,0x00,0xE0,0xF0,0xF8,
+    0xF8,0xF8,0xF0,0xE0,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x00,0x07,0x0F,0x1F,
+    0x1F,0x1F,0x0F,0x07,0x00,0x00,0x00,0x00
+};
+// Boss Top-Right (cyan) - Layer 2 (cyan/accent)
+static const u8 g_BossTRCyan[32] = {
+    0x00,0x00,0x00,0xF0,0xF0,0x10,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x10,0xF0,0x00,0x00,
+    0x00,0x00,0x00,0x0F,0x0F,0x08,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x08,0x0F,0x00,0x00
+};
+
+// Boss Bottom-Left (orange + yellow) - Layer 1 (orange base)
+static const u8 g_BossBLOrange[32] = {
+    0x00,0x00,0x00,0x00,0x0F,0x1F,0x1F,0x1F,
+    0x1F,0x1F,0x0F,0x07,0x03,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0xF0,0xF8,0xF8,0xF8,
+    0xF8,0xF8,0xF0,0xE0,0xC0,0x00,0x00,0x00
+};
+// Boss Bottom-Left (yellow accent) - Layer 2 (yellow)
+static const u8 g_BossBLYellow[32] = {
+    0x00,0x00,0x07,0x07,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x00,0x03,0x03,0x00,
+    0x00,0x00,0xE0,0xE0,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x00,0xC0,0xC0,0x00
+};
+
+// Boss Bottom-Right (red core intense) - Layer 1 (red dominant)
+static const u8 g_BossBRRed[32] = {
+    0x00,0x0F,0x1F,0x1F,0x1F,0x1F,0x0F,0x00,
+    0x00,0x00,0x00,0x07,0x07,0x00,0x00,0x00,
+    0x00,0xF0,0xF8,0xF8,0xF8,0xF8,0xF0,0x00,
+    0x00,0x00,0x00,0xE0,0xE0,0x00,0x00,0x00
+};
+// Boss Bottom-Right (yellow core accent) - Layer 2 (yellow highlights)
+static const u8 g_BossBRYellow[32] = {
+    0x00,0x00,0x00,0x04,0x0C,0x04,0x00,0x00,
+    0x03,0x07,0x07,0x00,0x00,0x01,0x01,0x00,
+    0x00,0x00,0x00,0x20,0x30,0x20,0x00,0x00,
+    0xC0,0xE0,0xE0,0x00,0x00,0x80,0x80,0x00
+};
+
+// Legacy single 16x16 boss (for compatibility, not used with 32x32 mode)
 static const u8 g_BossWhite[32] = {
     0x00,0x00,0x00,0x0F,0x1F,0x3F,0x7F,0x7E,
     0x3C,0x1F,0x0F,0x07,0x03,0x01,0x00,0x00,
     0x00,0x00,0x00,0xF0,0xF8,0xFC,0xFE,0x7E,
     0x3C,0xF8,0xF0,0xE0,0xC0,0x80,0x00,0x00
 };
-// Boss sprite red layer: core accent (inner diamond)
 static const u8 g_BossRed[32] = {
     0x00,0x00,0x00,0x00,0x00,0x00,0x10,0x38,
     0x38,0x10,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -2074,10 +2135,17 @@ void main()
     VDP_LoadSpritePattern(g_EnemyHeavyRed,    36, 4);
     VDP_LoadSpritePattern(g_EnemyDiverWhite,  40, 4);
     VDP_LoadSpritePattern(g_EnemyDiverRed,    44, 4);
-    VDP_LoadSpritePattern(g_EnemyBomberWhite, 48, 4);
+     VDP_LoadSpritePattern(g_EnemyBomberWhite, 48, 4);
     VDP_LoadSpritePattern(g_EnemyBomberRed,   52, 4);
-    VDP_LoadSpritePattern(g_BossWhite,        72, 4);
-    VDP_LoadSpritePattern(g_BossRed,          76, 4);
+    // Boss 32x32 (4 sprites: TL, TR, BL, BR) - 8 pattern sets total
+    VDP_LoadSpritePattern(g_BossTLWhite,      80, 4);  // Boss TL white
+    VDP_LoadSpritePattern(g_BossTLCyan,       84, 4);  // Boss TL cyan
+    VDP_LoadSpritePattern(g_BossTRWhite,      88, 4);  // Boss TR white
+    VDP_LoadSpritePattern(g_BossTRCyan,       92, 4);  // Boss TR cyan
+    VDP_LoadSpritePattern(g_BossBLOrange,     96, 4);  // Boss BL orange
+    VDP_LoadSpritePattern(g_BossBLYellow,    100, 4);  // Boss BL yellow
+    VDP_LoadSpritePattern(g_BossBRRed,       104, 4);  // Boss BR red
+    VDP_LoadSpritePattern(g_BossBRYellow,    108, 4);  // Boss BR yellow
     VDP_LoadSpritePattern(g_ExpSprite0,       56, 4);
     VDP_LoadSpritePattern(g_ExpSprite1,       60, 4);
     VDP_LoadSpritePattern(g_ExpSprite2,       64, 4);
@@ -2250,9 +2318,19 @@ void main()
                     
                     if (j == ENEMY_TYPE_BOSS)
                     {
-                        // Boss uses pattern indices 72 and 76
-                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, 72, COLOR_WHITE);
-                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, 76, COLOR_MEDIUM_RED);
+                        // Boss 32x32 rendered as 4 x 16x16 sprites in quad layout
+                        // Top-Left (white + cyan outline)
+                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x,     g_Enemies[i].y,     80, COLOR_WHITE);
+                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x,     g_Enemies[i].y,     84, COLOR_LIGHT_BLUE);
+                        // Top-Right (white + cyan outline)
+                        if (spr < 30) VDP_SetSpriteSM1(spr++, g_Enemies[i].x + 16, g_Enemies[i].y,     88, COLOR_WHITE);
+                        if (spr < 30) VDP_SetSpriteSM1(spr++, g_Enemies[i].x + 16, g_Enemies[i].y,     92, COLOR_LIGHT_BLUE);
+                        // Bottom-Left (orange base + yellow accents)
+                        if (spr < 30) VDP_SetSpriteSM1(spr++, g_Enemies[i].x,     g_Enemies[i].y + 16, 96, COLOR_MEDIUM_RED);
+                        if (spr < 30) VDP_SetSpriteSM1(spr++, g_Enemies[i].x,     g_Enemies[i].y + 16, 100, COLOR_LIGHT_YELLOW);
+                        // Bottom-Right (red core + yellow highlights)
+                        if (spr < 30) VDP_SetSpriteSM1(spr++, g_Enemies[i].x + 16, g_Enemies[i].y + 16, 104, COLOR_MEDIUM_RED);
+                        if (spr < 30) VDP_SetSpriteSM1(spr++, g_Enemies[i].x + 16, g_Enemies[i].y + 16, 108, COLOR_LIGHT_YELLOW);
                     }
                     else
                     {
