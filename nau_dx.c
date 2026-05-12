@@ -142,6 +142,7 @@
 #define HUD_FONT_COLOR_NRM  0x31  // Light Green (3) on Black (1)
 #define HUD_FONT_COLOR_HI   0xF1  // White (15) on Black (1)
 #define HUD_FONT_COLOR_CYN  0x71  // Cyan (7) on Black
+#define HLINE_TILE         126   // Tile for cyan separator lines (NOT 167 - conflicts with HI font space!)
 
 // Hi-scores
 #define HISCORE_COUNT    3
@@ -392,87 +393,93 @@ static const u8 g_BossRed[32] = {
 };
 
 // Boss sprite - CPC mothership ovni converted to MSX 16x16
-// White layer: outline structure (from CPC: C + W characters)
+// Like player ship: 2 layers (white + red) that composite to show details
+// 
+// Structure: 32 bytes = rows 0-15
+// Each row: 2 bytes (left half px 0-7, right half px 8-15)
+// Bytes 0-7: rows 0-7 left half
+// Bytes 8-15: rows 0-7 right half
+// Bytes 16-23: rows 8-15 left half
+// Bytes 24-31: rows 8-15 right half
+
+// White layer: complete outer ring (forms smooth circle)
 static const u8 g_BossWhiteNew[32] = {
-    // Left half
-    0x00, 0x0F, 0x3F, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF,
-    0xFF, 0xFF, 0xFF, 0x7F, 0x3F, 0x1F, 0x07, 0x00,
-    // Right half
-    0x00, 0xF0, 0xFC, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF,
-    0xFF, 0xFF, 0xFF, 0xFE, 0xFC, 0xF8, 0xE0, 0x00
+    // Rows 0-7, left half (px 0-7)
+    0x00,  // Row 0: ........
+    0x0F,  // Row 1: ....1111
+    0x3F,  // Row 2: ..111111
+    0x7F,  // Row 3: .1111111
+    0xFF,  // Row 4: 11111111
+    0xFF,  // Row 5: 11111111
+    0xFF,  // Row 6: 11111111
+    0xFF,  // Row 7: 11111111
+    // Rows 0-7, right half (px 8-15)
+    0x00,  // Row 0: ........
+    0xF0,  // Row 1: 1111....
+    0xFC,  // Row 2: 111111..
+    0xFE,  // Row 3: 1111111.
+    0xFF,  // Row 4: 11111111
+    0xFF,  // Row 5: 11111111
+    0xFF,  // Row 6: 11111111
+    0xFF,  // Row 7: 11111111
+    // Rows 8-15, left half (px 0-7)
+    0xFF,  // Row 8:  11111111
+    0xFF,  // Row 9:  11111111
+    0xFF,  // Row 10: 11111111
+    0x7F,  // Row 11: .1111111
+    0x3F,  // Row 12: ..111111
+    0x1F,  // Row 13: ...11111
+    0x07,  // Row 14: .....111
+    0x00,  // Row 15: ........
+    // Rows 8-15, right half (px 8-15)
+    0xFF,  // Row 8:  11111111
+    0xFF,  // Row 9:  11111111
+    0xFF,  // Row 10: 11111111
+    0xFE,  // Row 11: 1111111.
+    0xFC,  // Row 12: 111111..
+    0xF8,  // Row 13: 11111...
+    0xE0,  // Row 14: 111.....
+    0x00   // Row 15: ........
 };
 
-// Red layer: core (from CPC: R characters in center)
+// Red layer: core nucleus (concentrated center pixels for red color effect)
 static const u8 g_BossRedNew[32] = {
-    // Left half
-    0x00, 0x00, 0x00, 0x00, 0x0F, 0x3F, 0x3F, 0x3F,
-    0x3F, 0x3F, 0x3F, 0x00, 0x00, 0x00, 0x00, 0x00,
-    // Right half
-    0x00, 0x00, 0x00, 0x00, 0xF0, 0xFC, 0xFC, 0xFC,
-    0xFC, 0xFC, 0xFC, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-
-// Boss 32x32 = 4 x 16x16 sprites (quad layout TL, TR, BL, BR)
-// Based on CPC boss: Cyan outline + White fill + Orange + Yellow + Red core
-
-// Boss Top-Left (cyan outline + white) - Layer 1 (white)
-static const u8 g_BossTLWhite[32] = {
-    0x00,0x00,0x00,0x00,0x00,0x07,0x0F,0x1F,
-    0x1F,0x1F,0x0F,0x07,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0xE0,0xF0,0xF8,
-    0xF8,0xF8,0xF0,0xE0,0x00,0x00,0x00,0x00
-};
-// Boss Top-Left (cyan) - Layer 2 (cyan/accent)
-static const u8 g_BossTLCyan[32] = {
-    0x00,0x00,0x00,0x0F,0x0F,0x08,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x08,0x0F,0x00,0x00,
-    0x00,0x00,0x00,0xF0,0xF0,0x10,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x10,0xF0,0x00,0x00
-};
-
-// Boss Top-Right (white fill + cyan outline) - Layer 1 (white)
-static const u8 g_BossTRWhite[32] = {
-    0x00,0x00,0x00,0x00,0x00,0xE0,0xF0,0xF8,
-    0xF8,0xF8,0xF0,0xE0,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x07,0x0F,0x1F,
-    0x1F,0x1F,0x0F,0x07,0x00,0x00,0x00,0x00
-};
-// Boss Top-Right (cyan) - Layer 2 (cyan/accent)
-static const u8 g_BossTRCyan[32] = {
-    0x00,0x00,0x00,0xF0,0xF0,0x10,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x10,0xF0,0x00,0x00,
-    0x00,0x00,0x00,0x0F,0x0F,0x08,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x08,0x0F,0x00,0x00
-};
-
-// Boss Bottom-Left (orange + yellow) - Layer 1 (orange base)
-static const u8 g_BossBLOrange[32] = {
-    0x00,0x00,0x00,0x00,0x0F,0x1F,0x1F,0x1F,
-    0x1F,0x1F,0x0F,0x07,0x03,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0xF0,0xF8,0xF8,0xF8,
-    0xF8,0xF8,0xF0,0xE0,0xC0,0x00,0x00,0x00
-};
-// Boss Bottom-Left (yellow accent) - Layer 2 (yellow)
-static const u8 g_BossBLYellow[32] = {
-    0x00,0x00,0x07,0x07,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x03,0x03,0x00,
-    0x00,0x00,0xE0,0xE0,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0xC0,0xC0,0x00
-};
-
-// Boss Bottom-Right (red core intense) - Layer 1 (red dominant)
-static const u8 g_BossBRRed[32] = {
-    0x00,0x0F,0x1F,0x1F,0x1F,0x1F,0x0F,0x00,
-    0x00,0x00,0x00,0x07,0x07,0x00,0x00,0x00,
-    0x00,0xF0,0xF8,0xF8,0xF8,0xF8,0xF0,0x00,
-    0x00,0x00,0x00,0xE0,0xE0,0x00,0x00,0x00
-};
-// Boss Bottom-Right (yellow core accent) - Layer 2 (yellow highlights)
-static const u8 g_BossBRYellow[32] = {
-    0x00,0x00,0x00,0x04,0x0C,0x04,0x00,0x00,
-    0x03,0x07,0x07,0x00,0x00,0x01,0x01,0x00,
-    0x00,0x00,0x00,0x20,0x30,0x20,0x00,0x00,
-    0xC0,0xE0,0xE0,0x00,0x00,0x80,0x80,0x00
+    // Rows 0-7, left half (px 0-7)
+    0x00,  // Row 0: ........
+    0x00,  // Row 1: ........
+    0x06,  // Row 2: ....0110
+    0x0F,  // Row 3: ....1111
+    0x0F,  // Row 4: ....1111
+    0x3F,  // Row 5: ..111111
+    0x3F,  // Row 6: ..111111
+    0x3F,  // Row 7: ..111111
+    // Rows 0-7, right half (px 8-15)
+    0x00,  // Row 0: ........
+    0x00,  // Row 1: ........
+    0x60,  // Row 2: 0110....
+    0xF0,  // Row 3: 1111....
+    0xF0,  // Row 4: 1111....
+    0xFC,  // Row 5: 111111..
+    0xFC,  // Row 6: 111111..
+    0xFC,  // Row 7: 111111..
+    // Rows 8-15, left half (px 0-7)
+    0x3F,  // Row 8:  ..111111
+    0x3F,  // Row 9:  ..111111
+    0x3F,  // Row 10: ..111111
+    0x0F,  // Row 11: ....1111
+    0x06,  // Row 12: ....0110
+    0x03,  // Row 13: ......11
+    0x00,  // Row 14: ........
+    0x00,  // Row 15: ........
+    // Rows 8-15, right half (px 8-15)
+    0xFC,  // Row 8:  111111..
+    0xFC,  // Row 9:  111111..
+    0xFC,  // Row 10: 111111..
+    0xF0,  // Row 11: 1111....
+    0x60,  // Row 12: 0110....
+    0xC0,  // Row 13: 11......
+    0x00,  // Row 14: ........
+    0x00   // Row 15: ........
 };
 
 //=============================================================================
@@ -1755,19 +1762,17 @@ void HudDrawText(u8 col, u8 row, const char* s, u8 colorByte)
 // Linia horitzontal amb color (simula cpct_drawSolidBox d'1 pixel alt del CPC)
 void HudDrawHLine(u8 col, u8 row, u8 len, u8 colorByte)
 {
-    // Usem un tile especial: patró ple a la fila 4 (pixel central)
-    // Guardem el tile 167 per a la linia
     static const u8 hline_tile[8] = {0x00,0x00,0x00,0xFF,0x00,0x00,0x00,0x00};
     u8 hline_color[8];
     u8 bank, i, r;
     for (r = 0; r < 8; r++) hline_color[r] = colorByte;
     for (bank = 0; bank < 3; bank++)
     {
-        VDP_LoadBankPattern_GM2(hline_tile,  1, bank, 167);
-        VDP_LoadBankColor_GM2(hline_color,   1, bank, 167);
+        VDP_LoadBankPattern_GM2(hline_tile,  1, bank, HLINE_TILE);
+        VDP_LoadBankColor_GM2(hline_color,   1, bank, HLINE_TILE);
     }
     for (i = 0; i < len; i++)
-        VDP_Poke_GM2((u8)(col+i), row, 167);
+        VDP_Poke_GM2((u8)(col+i), row, HLINE_TILE);
 }
 
 void UpdateMenuInput()
@@ -1832,18 +1837,22 @@ void UpdateMenuInput()
             g_TitleDirty = 1; g_TitlePhase = 0;
         }
     }
-    else if (g_TitleMode == TS_HISCORE_VIEW)
-    {
-        if (g_TitlePhase == 0)
-        {
-            if (!fire) g_TitlePhase = 1;
-        }
-        else if (fire)
-        {
-            g_TitleMode = TS_MENU; g_TitleDirty = 1; g_TitlePhase = 0;
-            g_AttractFrm = 0; g_AttractCycle = 0;
-        }
-    }
+     else if (g_TitleMode == TS_HISCORE_VIEW)
+     {
+         if (g_TitlePhase == 0)
+         {
+             if (!fire) g_TitlePhase = 1;
+         }
+         else if (fire)
+         {
+             g_TitleMode = TS_MENU; g_TitleDirty = 1; g_TitlePhase = 0;
+             g_AttractFrm = 0; g_AttractCycle = 0;
+             // Limpia sprites al volver al menú
+             u8 s;
+             for (s = 0; s < 32; s++)
+                 VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
+         }
+     }
     else if (g_TitleMode == TS_WIN)
     {
         if (fire)
@@ -1935,7 +1944,26 @@ void UpdateMenuInput()
             }
             g_TitleDirty = 1;
         }
-    }
+     }
+ }
+
+// Redraw only the hi-score input initials (fast update without full redraw)
+void RedrawHsInput()
+{
+     u8 k;
+     char c[2];
+     // Clear the input line first (row 20, columns 14-18)
+     for (k = 0; k < 3; k++)
+     {
+         HudDrawText((u8)(14 + k * 2), 20, " ", HUD_FONT_COLOR_NRM);
+     }
+     // Redraw the 3 initials
+     for (k = 0; k < 3; k++)
+     {
+         c[0] = (char)g_HsInputChar[k]; c[1] = 0;
+         HudDrawText((u8)(14 + k * 2), 20, c,
+                     k == g_HsInputPos ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM);
+     }
 }
 
 void DrawMenuScreen()
@@ -1948,24 +1976,31 @@ void DrawMenuScreen()
     InitMenuStars();
 
     // 1:1 CPC: estrelles centrals NOMÉS per TOP3 (zona superior buida sense logo)
-    // HOW TO PLAY i HISCORE_INPUT usen estrelles laterals perque el text ocupa tot
-    g_MenuUseCenter = (g_TitleMode == TS_ATTRACT_SCORE ||
-                       g_TitleMode == TS_HISCORE_VIEW) ? 1 : 0;
-
-    // Dibuixa estrelles inicials
+    // HISCORE_INPUT i HISCORE_VIEW no tenen estrelles laterals (corrompen text)
+    if (g_TitleMode != TS_HISCORE_INPUT && g_TitleMode != TS_HISCORE_VIEW)
     {
-        u8 total = g_MenuUseCenter ? MENU_STAR_CN : MENU_STAR_N;
-        for (i = 0; i < total; i++) DrawMenuStar(i);
-        // Estrelles laterals sempre
-        if (g_MenuUseCenter)
+        g_MenuUseCenter = (g_TitleMode == TS_ATTRACT_SCORE) ? 1 : 0;
+
+        // Dibuixa estrelles inicials
         {
-            for (i = 0; i < MENU_STAR_N; i++)
+            u8 total = g_MenuUseCenter ? MENU_STAR_CN : MENU_STAR_N;
+            for (i = 0; i < total; i++) DrawMenuStar(i);
+            // Estrelles laterals sempre
+            if (g_MenuUseCenter)
             {
-                u8 state = g_MenuStarState[i];
-                u8 tile  = (state == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + state - 1);
-                VDP_Poke_GM2(g_MenuStarX[i], g_MenuStarY[i], tile);
+                for (i = 0; i < MENU_STAR_N; i++)
+                {
+                    u8 state = g_MenuStarState[i];
+                    u8 tile  = (state == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + state - 1);
+                    VDP_Poke_GM2(g_MenuStarX[i], g_MenuStarY[i], tile);
+                }
             }
         }
+    }
+    else
+    {
+        // No stars during hi-score input (they corrupt text)
+        g_MenuUseCenter = 0;
     }
 
     if (g_TitleMode == TS_MENU)
@@ -2080,15 +2115,17 @@ void EnterPostGame(u8 won)
         g_HsPos = HsIsTop(g_Score, g_Level);
         if (g_Score > 0 && g_HsPos < HISCORE_COUNT)
         {
-            g_HsInputPos    = 0;
-            g_HsInputChar[0] = 'A';
-            g_HsInputChar[1] = 'A';
-            g_HsInputChar[2] = 'A';
-            g_TitleMode = TS_HISCORE_INPUT;
-        }
-        else
-        {
-            g_TitleMode = TS_HISCORE_VIEW;
+             g_HsInputPos    = 0;
+             g_HsInputChar[0] = 'A';
+             g_HsInputChar[1] = 'A';
+             g_HsInputChar[2] = 'A';
+             g_TitleMode = TS_HISCORE_INPUT;
+             g_TitleDirty = 1;
+         }
+         else
+         {
+             g_TitleMode = TS_HISCORE_VIEW;
+             g_TitleDirty = 1;
         }
     }
     g_GameState  = GS_TITLE;
@@ -2190,17 +2227,30 @@ void main()
         row8 = Keyboard_Read(8);
         row5 = Keyboard_Read(5);
 
-        if (g_GameState == GS_TITLE)
-        {
-            //=== MENU ===
-            UpdateMenuInput();
-            TickMenuStars(); // 1:1 CPC: tickTitleTwinkle
+         if (g_GameState == GS_TITLE)
+         {
+             //=== MENU ===
+             UpdateMenuInput();
+             if (g_TitleMode != TS_HISCORE_INPUT && g_TitleMode != TS_HISCORE_VIEW)
+                 TickMenuStars(); // Stars corrupt text in gameover screens
 
-            if (g_TitleDirty)
-            {
-                DrawMenuScreen();
-                g_TitleDirty = 0;
-            }
+             if (g_TitleDirty)
+             {
+                 if (g_TitleMode == TS_HISCORE_INPUT && g_TitlePhase > 0)
+                 {
+                     // Optimized: only redraw the input line, not the whole screen
+                     // (but only after the first frame)
+                     RedrawHsInput();
+                 }
+                 else
+                 {
+                     // Full redraw for other screens or first frame of input
+                     DrawMenuScreen();
+                     if (g_TitleMode == TS_HISCORE_INPUT)
+                         g_TitlePhase = 1;  // Mark that we've drawn the full screen once
+                 }
+                 g_TitleDirty = 0;
+             }
 
             // Transicio a joc
             if (g_GameState == GS_PLAYING)
@@ -2298,71 +2348,81 @@ void main()
             if (g_Level > ENDGAME_FINAL_LEVEL)
                 EnterPostGame(1);
 
-            UpdateHUD();
+             UpdateHUD();
 
-            // Draw sprites
-            spr = 0;
-            g_FrameCount++;
+             // Draw sprites (but not during game over delay)
+             if (g_GameOverDelay == 0)
+             {
+                 spr = 0;
+                 g_FrameCount++;
 
-            // Ship
-            if (!g_ShipExploding && (!g_ShipInvul || (g_ShipInvulTimer & 1)))
-            {
-                VDP_SetSpriteSM1(spr++, g_ShipX, g_ShipY, 0, COLOR_WHITE);
-                VDP_SetSpriteSM1(spr++, g_ShipX, g_ShipY, 4, COLOR_MEDIUM_RED);
-            }
-            else { spr += 2; }
+                 // Ship
+                 if (!g_ShipExploding && (!g_ShipInvul || (g_ShipInvulTimer & 1)))
+                 {
+                     VDP_SetSpriteSM1(spr++, g_ShipX, g_ShipY, 0, COLOR_WHITE);
+                     VDP_SetSpriteSM1(spr++, g_ShipX, g_ShipY, 4, COLOR_MEDIUM_RED);
+                 }
+                 else { spr += 2; }
 
-            // Player shots
-            for (i = 0; i < MAX_SHOTS; i++)
-                if (g_Shots[i].active)
-                    VDP_SetSpriteSM1(spr++, g_Shots[i].x, g_Shots[i].y, 8, COLOR_LIGHT_YELLOW);
+                 // Player shots
+                 for (i = 0; i < MAX_SHOTS; i++)
+                     if (g_Shots[i].active)
+                         VDP_SetSpriteSM1(spr++, g_Shots[i].x, g_Shots[i].y, 8, COLOR_LIGHT_YELLOW);
 
-            // Enemy shots
-            for (i = 0; i < MAX_ENEMY_SHOTS && spr < 18; i++)
-                if (g_EnemyShots[i].active)
-                    VDP_SetSpriteSM1(spr++, g_EnemyShots[i].x, g_EnemyShots[i].y, 12, COLOR_MEDIUM_RED);
+                 // Enemy shots
+                 for (i = 0; i < MAX_ENEMY_SHOTS && spr < 18; i++)
+                     if (g_EnemyShots[i].active)
+                         VDP_SetSpriteSM1(spr++, g_EnemyShots[i].x, g_EnemyShots[i].y, 12, COLOR_MEDIUM_RED);
 
-             // Enemies
-            {
-                static const u8 etype_pat_w[5] = {16, 24, 32, 40, 48};
-                static const u8 etype_pat_r[5] = {20, 28, 36, 44, 52};
-                for (i = 0; i < MAX_ENEMIES && spr < 28; i++)
-                {
-                    if (!g_Enemies[i].active) continue;
-                    j = g_Enemies[i].type;
-                    
-                    if (j == ENEMY_TYPE_BOSS)
-                    {
-                        // Boss 16x16 rendered as 2 composite sprites (like ship)
-                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, 72, COLOR_WHITE);
-                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, 76, COLOR_MEDIUM_RED);
-                    }
-                    else
-                    {
-                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, etype_pat_w[j], COLOR_WHITE);
-                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, etype_pat_r[j], COLOR_MEDIUM_RED);
-                    }
-                }
-            }
+                  // Enemies
+                 {
+                     static const u8 etype_pat_w[5] = {16, 24, 32, 40, 48};
+                     static const u8 etype_pat_r[5] = {20, 28, 36, 44, 52};
+                     for (i = 0; i < MAX_ENEMIES && spr < 28; i++)
+                     {
+                         if (!g_Enemies[i].active) continue;
+                         j = g_Enemies[i].type;
+                         
+                         if (j == ENEMY_TYPE_BOSS)
+                         {
+                             // Boss 16x16 rendered as 2 composite sprites (like ship)
+                             VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, 72, COLOR_WHITE);
+                             VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, 76, COLOR_MEDIUM_RED);
+                         }
+                         else
+                         {
+                             VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, etype_pat_w[j], COLOR_WHITE);
+                             VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, etype_pat_r[j], COLOR_MEDIUM_RED);
+                         }
+                     }
+                 }
 
-            // Explosions
-            for (j = 0; j < MAX_EXPLOSIONS && spr < 30; j++)
-            {
-                static const u8 exp_pat_e[4] = {56, 60, 64, 60};
-                static const u8 exp_pat_s[6] = {56, 60, 64, 68, 64, 60};
-                if (!g_Explosions[j].active) continue;
-                f = g_Explosions[j].frame;
-                if (g_Explosions[j].kind == EXP_KIND_SHIP)
-                { if (f > 5) f = 5; pat = exp_pat_s[f]; }
-                else
-                { if (f > 3) f = 3; pat = exp_pat_e[f]; }
-                col = (f == 0) ? COLOR_WHITE :
-                      (f == 1) ? COLOR_LIGHT_YELLOW : COLOR_MEDIUM_RED;
-                VDP_SetSpriteSM1(spr++, g_Explosions[j].x, g_Explosions[j].y, pat, col);
-            }
+                 // Explosions
+                 for (j = 0; j < MAX_EXPLOSIONS && spr < 30; j++)
+                 {
+                     static const u8 exp_pat_e[4] = {56, 60, 64, 60};
+                     static const u8 exp_pat_s[6] = {56, 60, 64, 68, 64, 60};
+                     if (!g_Explosions[j].active) continue;
+                     f = g_Explosions[j].frame;
+                     if (g_Explosions[j].kind == EXP_KIND_SHIP)
+                     { if (f > 5) f = 5; pat = exp_pat_s[f]; }
+                     else
+                     { if (f > 3) f = 3; pat = exp_pat_e[f]; }
+                     col = (f == 0) ? COLOR_WHITE :
+                           (f == 1) ? COLOR_LIGHT_YELLOW : COLOR_MEDIUM_RED;
+                     VDP_SetSpriteSM1(spr++, g_Explosions[j].x, g_Explosions[j].y, pat, col);
+                 }
 
-            while (spr < 32)
-                VDP_SetSpritePositionY(spr++, VDP_SPRITE_DISABLE_SM1);
+                 while (spr < 32)
+                     VDP_SetSpritePositionY(spr++, VDP_SPRITE_DISABLE_SM1);
+             }
+             else
+             {
+                 // During game over delay, disable all sprites
+                 u8 s;
+                 for (s = 0; s < 32; s++)
+                     VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
+             }
         }
     }
 }
