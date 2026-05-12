@@ -43,6 +43,7 @@
 #define ENEMY_TYPE_HEAVY   2
 #define ENEMY_TYPE_DIVER   3
 #define ENEMY_TYPE_BOMBER  4
+#define ENEMY_TYPE_BOSS    5
 
 // Enemy speeds - 1:1 CPC (adaptats a MSX: CPC té 50Hz i pixels més grans)
 #define ENEMY_SPEED_BASIC   1
@@ -50,6 +51,7 @@
 #define ENEMY_SPEED_HEAVY   1
 #define ENEMY_SPEED_DIVER   2
 #define ENEMY_SPEED_BOMBER  1
+#define ENEMY_SPEED_BOSS    1   // Boss moves at 1 px/frame vertically
 
 // Enemy scores - 1:1 CPC
 #define ENEMY_SCORE_BASIC   10
@@ -57,6 +59,7 @@
 #define ENEMY_SCORE_HEAVY   50
 #define ENEMY_SCORE_DIVER   40
 #define ENEMY_SCORE_BOMBER  80
+#define ENEMY_SCORE_BOSS    1500
 
 // Movement patterns - 1:1 CPC
 #define PATT_STRAIGHT  0
@@ -83,10 +86,20 @@
 #define LCFG_F_BOSS1  ((u8)1u)
 #define LCFG_F_BOSS2  ((u8)2u)
 
+// Boss tiers - 1:1 CPC
+#define BOSS_TIER_LEVEL_5    0     // Level 5: 12 HP, speed 1, 2 bullets
+#define BOSS_TIER_LEVEL_10   1     // Level 10: 17 HP, speed 1, 2 bullets
+#define BOSS_TIER_LEVEL_15   2     // Level 15: 22 HP, speed 2, 2 bullets
+#define BOSS_TIER_LEVEL_20   3     // Level 20: 27 HP, speed 2, 3 bullets
+#define BOSS_TIER_LEVEL_25   4     // Level 25: 32 HP, speed 3, 3 bullets
+#define BOSS_TIERS_MAX       5
+
 // Enemies
 #define MAX_ENEMIES        8   // CPC: WAVE_PLAN_MAX=8
 #define ENEMY_W            12
 #define ENEMY_H            12
+#define ENEMY_BOSS_W       16   // Boss is 16x16
+#define ENEMY_BOSS_H       16
 #define ENEMYSHOT_W        2
 #define ENEMYSHOT_H        6
 #define ENEMYSHOT_SPEED_Y  3
@@ -163,6 +176,7 @@ static u8  g_ShipInvulTimer = 0;
 static u8  g_ShipLastLife   = 0;  // 1:1 CPC: ship_last_life
 static u8  g_GameOverDelay  = 0;
 static u8  g_FrameCount     = 0;
+static u8  g_PausedFlag     = 0;  // 1 = paused, 0 = playing
 
 // Game state
 static u8  g_GameState      = GS_TITLE;
@@ -363,6 +377,22 @@ static const u8 g_EnemyBomberRed[32] = {
     0xCC,0x0C,0x18,0xF0,0xF0,0xC0,0x00,0x00
 };
 
+// Boss sprite (mothership) - 16x16, cyan + white outline with core
+// White layer: outline + body structure
+static const u8 g_BossWhite[32] = {
+    0x00,0x00,0x00,0x0F,0x1F,0x3F,0x7F,0x7E,
+    0x3C,0x1F,0x0F,0x07,0x03,0x01,0x00,0x00,
+    0x00,0x00,0x00,0xF0,0xF8,0xFC,0xFE,0x7E,
+    0x3C,0xF8,0xF0,0xE0,0xC0,0x80,0x00,0x00
+};
+// Boss sprite red layer: core accent (inner diamond)
+static const u8 g_BossRed[32] = {
+    0x00,0x00,0x00,0x00,0x00,0x00,0x10,0x38,
+    0x38,0x10,0x00,0x00,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x00,0x00,0x08,0x1C,
+    0x1C,0x08,0x00,0x00,0x00,0x00,0x00,0x00
+};
+
 //=============================================================================
 // WALL SCROLL TILES
 //=============================================================================
@@ -543,6 +573,16 @@ static const u8  g_EnemySpeedY[5] = {
 static const u16 g_EnemyScore[5] = {
     ENEMY_SCORE_BASIC, ENEMY_SCORE_FAST, ENEMY_SCORE_HEAVY,
     ENEMY_SCORE_DIVER, ENEMY_SCORE_BOMBER
+};
+
+// Boss tier data: HP, vertical speed, fire rate cooldown, bullet spread count
+typedef struct { u8 hp; u8 vy; u8 fire_cd; u8 num_bullets; } TBossTier;
+static const TBossTier g_BossTierTable[BOSS_TIERS_MAX] = {
+    {12, 1, 8,  2},   // Tier 0 (Level 5)
+    {17, 1, 7,  2},   // Tier 1 (Level 10)
+    {22, 2, 6,  2},   // Tier 2 (Level 15)
+    {27, 2, 5,  3},   // Tier 3 (Level 20)
+    {32, 3, 5,  3}    // Tier 4 (Level 25)
 };
 
 static const TLevelConfig g_LevelTable[25] = {
@@ -776,13 +816,79 @@ static void TryWaveSpawnTopup()
 static void StartNewWave()
 {
     const TLevelConfig* cfg = LevelConfigGet(g_Level);
-    u8 mask, total;
+    u8 mask, total, tier, i;
 
     g_WaveKilled    = 0;
     g_WaveActive    = 1;
     g_WaveSpawned   = 0;
     g_WaveIndianDelay = 0;
 
+    // Handle boss waves
+    if (cfg->flags & LCFG_F_BOSS1)
+    {
+        // Single boss
+        g_WaveTotal = 1;
+        tier = (g_Level >= 25) ? 4 : ((g_Level - 1) / 5);   // Tier 0-4 based on level
+        g_WaveSpawned = 1;
+        
+        // Find empty enemy slot and spawn boss
+        for (i = 0; i < MAX_ENEMIES; i++)
+        {
+            if (!g_Enemies[i].active)
+            {
+                g_Enemies[i].x       = (u8)(GAME_X0 + GAME_W / 2 - ENEMY_BOSS_W / 2);
+                g_Enemies[i].y       = 18;
+                g_Enemies[i].active  = 1;
+                g_Enemies[i].type    = ENEMY_TYPE_BOSS;
+                g_Enemies[i].health  = g_BossTierTable[tier].hp;
+                g_Enemies[i].vy      = g_BossTierTable[tier].vy;
+                g_Enemies[i].vx      = 0;
+                g_Enemies[i].pattern = PATT_STRAIGHT;
+                g_Enemies[i].zig_timer = 0;
+                g_Enemies[i].fire_cd = g_BossTierTable[tier].fire_cd;
+                break;
+            }
+        }
+        g_WaveBonusBase = ENEMY_SCORE_BOSS;
+        g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
+        return;
+    }
+    if (cfg->flags & LCFG_F_BOSS2)
+    {
+        // Dual boss (Level 25)
+        g_WaveTotal = 2;
+        tier = 4;   // Tier 4 for Level 25
+        g_WaveSpawned = 2;
+        
+        // Spawn two bosses
+        for (i = 0; i < MAX_ENEMIES && g_WaveSpawned > 0; i++)
+        {
+            if (!g_Enemies[i].active)
+            {
+                if (g_WaveSpawned == 2)
+                    g_Enemies[i].x = (u8)(GAME_X0 + GAME_W / 2 - ENEMY_BOSS_W / 2 - 20);  // Left
+                else
+                    g_Enemies[i].x = (u8)(GAME_X0 + GAME_W / 2 - ENEMY_BOSS_W / 2 + 20);  // Right
+                
+                g_Enemies[i].y       = 18;
+                g_Enemies[i].active  = 1;
+                g_Enemies[i].type    = ENEMY_TYPE_BOSS;
+                g_Enemies[i].health  = g_BossTierTable[tier].hp;
+                g_Enemies[i].vy      = g_BossTierTable[tier].vy;
+                g_Enemies[i].vx      = 0;
+                g_Enemies[i].pattern = PATT_STRAIGHT;
+                g_Enemies[i].zig_timer = 0;
+                g_Enemies[i].fire_cd = g_BossTierTable[tier].fire_cd;
+                g_WaveSpawned--;
+            }
+        }
+        g_WaveSpawned = 2;  // Reset spawn count
+        g_WaveBonusBase = ENEMY_SCORE_BOSS;
+        g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
+        return;
+    }
+
+    // Regular enemy wave
     total = cfg->per_wave;
     if (total > WAVE_PLAN_MAX) total = WAVE_PLAN_MAX;
     g_WaveTotal = total;
@@ -897,11 +1003,35 @@ void SpawnEnemyShot(u8 ex, u8 ey)
     }
 }
 
+// Boss multi-shot: spread bullets at offset angles
+static void SpawnBossShots(u8 ex, u8 ey, u8 num_bullets)
+{
+    u8 j, spawned = 0;
+    i8 vx_offsets[3] = {-1, 0, 1};
+    
+    for (j = 0; j < num_bullets && spawned < MAX_ENEMY_SHOTS; j++)
+    {
+        u8 k;
+        for (k = 0; k < MAX_ENEMY_SHOTS; k++)
+        {
+            if (!g_EnemyShots[k].active)
+            {
+                g_EnemyShots[k].x      = ex + ENEMY_BOSS_W / 2;
+                g_EnemyShots[k].y      = ey + ENEMY_BOSS_H;
+                g_EnemyShots[k].vx     = vx_offsets[j];
+                g_EnemyShots[k].active = 1;
+                spawned++;
+                break;
+            }
+        }
+    }
+}
+
 void SpawnEnemyShot(u8 ex, u8 ey);
 
 void UpdateEnemies()
 {
-    u8 i;
+    u8 i, tier;
 
     // 1:1 CPC: spawnWave (no spawna mentre explota o invulnerable)
     if (!g_ShipExploding && !g_ShipInvul)
@@ -912,27 +1042,63 @@ void UpdateEnemies()
     {
         if (!g_Enemies[i].active) continue;
 
-        g_Enemies[i].y += g_Enemies[i].vy;
-
-        if (g_Enemies[i].pattern == PATT_ZIGZAG)
+        // Boss-specific behavior
+        if (g_Enemies[i].type == ENEMY_TYPE_BOSS)
         {
-            if (g_Enemies[i].zig_timer) g_Enemies[i].zig_timer--;
-            else { g_Enemies[i].zig_timer = 6; g_Enemies[i].vx = -g_Enemies[i].vx; }
+            // Boss descends and oscillates
+            g_Enemies[i].y += g_Enemies[i].vy;
+            
+            // Hold at midscreen (Y=74) and oscillate horizontally
+            if (g_Enemies[i].y >= 74)
+                g_Enemies[i].y = 74;
+            
+            // Boss oscillation: every 10-25 frames, change direction randomly
+            if (g_Enemies[i].zig_timer) 
+                g_Enemies[i].zig_timer--;
+            else 
+            { 
+                g_Enemies[i].zig_timer = 10 + (Math_GetRandom8() & 15);  // 10-25 frames
+                g_Enemies[i].vx = (Math_GetRandom8() & 1) ? 1 : -1;
+            }
             g_Enemies[i].x = (u8)((i8)g_Enemies[i].x + g_Enemies[i].vx);
-            if (g_Enemies[i].x < GAME_X0)        g_Enemies[i].x = GAME_X0;
-            if (g_Enemies[i].x > GAME_X1-ENEMY_W) g_Enemies[i].x = GAME_X1-ENEMY_W;
+            if (g_Enemies[i].x < GAME_X0)              g_Enemies[i].x = GAME_X0;
+            if (g_Enemies[i].x > GAME_X1 - ENEMY_BOSS_W) g_Enemies[i].x = GAME_X1 - ENEMY_BOSS_W;
+            
+            // Boss firing: determine tier to get bullet count
+            tier = (g_Level >= 25) ? 4 : ((g_Level - 1) / 5);
+            if (g_Enemies[i].fire_cd > 0) 
+                g_Enemies[i].fire_cd--;
+            else 
+            { 
+                SpawnBossShots(g_Enemies[i].x, g_Enemies[i].y, g_BossTierTable[tier].num_bullets);
+                g_Enemies[i].fire_cd = g_BossTierTable[tier].fire_cd; 
+            }
         }
-        else if (g_Enemies[i].pattern == PATT_DIAGONAL)
+        else
         {
-            if      (g_Enemies[i].vx < 0 && g_Enemies[i].x <= GAME_X0)        g_Enemies[i].vx = 1;
-            else if (g_Enemies[i].vx > 0 && g_Enemies[i].x >= GAME_X1-ENEMY_W) g_Enemies[i].vx = -1;
-            else g_Enemies[i].x = (u8)((i8)g_Enemies[i].x + g_Enemies[i].vx);
+            // Regular enemy movement
+            g_Enemies[i].y += g_Enemies[i].vy;
+
+            if (g_Enemies[i].pattern == PATT_ZIGZAG)
+            {
+                if (g_Enemies[i].zig_timer) g_Enemies[i].zig_timer--;
+                else { g_Enemies[i].zig_timer = 6; g_Enemies[i].vx = -g_Enemies[i].vx; }
+                g_Enemies[i].x = (u8)((i8)g_Enemies[i].x + g_Enemies[i].vx);
+                if (g_Enemies[i].x < GAME_X0)        g_Enemies[i].x = GAME_X0;
+                if (g_Enemies[i].x > GAME_X1-ENEMY_W) g_Enemies[i].x = GAME_X1-ENEMY_W;
+            }
+            else if (g_Enemies[i].pattern == PATT_DIAGONAL)
+            {
+                if      (g_Enemies[i].vx < 0 && g_Enemies[i].x <= GAME_X0)        g_Enemies[i].vx = 1;
+                else if (g_Enemies[i].vx > 0 && g_Enemies[i].x >= GAME_X1-ENEMY_W) g_Enemies[i].vx = -1;
+                else g_Enemies[i].x = (u8)((i8)g_Enemies[i].x + g_Enemies[i].vx);
+            }
+
+            if (g_Enemies[i].fire_cd > 0) g_Enemies[i].fire_cd--;
+            else { SpawnEnemyShot(g_Enemies[i].x, g_Enemies[i].y); g_Enemies[i].fire_cd = ENEMYSHOT_COOLDOWN; }
         }
 
         if (g_Enemies[i].y >= SCREEN_H) { g_Enemies[i].active = 0; continue; }
-
-        if (g_Enemies[i].fire_cd > 0) g_Enemies[i].fire_cd--;
-        else { SpawnEnemyShot(g_Enemies[i].x, g_Enemies[i].y); g_Enemies[i].fire_cd = ENEMYSHOT_COOLDOWN; }
     }
 
     // Actualitza dispars enemics
@@ -1050,6 +1216,7 @@ u8 RectOverlap(u8 x1, u8 y1, u8 w1, u8 h1, u8 x2, u8 y2, u8 w2, u8 h2){
 void CheckCollisions()
 {
     u8 i, j;
+    u8 enemy_w, enemy_h;
 
     // Shots vs enemies
     for (i = 0; i < MAX_SHOTS; i++)
@@ -1058,8 +1225,13 @@ void CheckCollisions()
         for (j = 0; j < MAX_ENEMIES; j++)
         {
             if (!g_Enemies[j].active) continue;
+            
+            // Determine enemy hitbox size
+            enemy_w = (g_Enemies[j].type == ENEMY_TYPE_BOSS) ? ENEMY_BOSS_W : ENEMY_W;
+            enemy_h = (g_Enemies[j].type == ENEMY_TYPE_BOSS) ? ENEMY_BOSS_H : ENEMY_H;
+            
             if (RectOverlap(g_Shots[i].x, g_Shots[i].y, 4, 8,
-                            g_Enemies[j].x, g_Enemies[j].y, ENEMY_W, ENEMY_H))
+                            g_Enemies[j].x, g_Enemies[j].y, enemy_w, enemy_h))
             {
                 g_Shots[i].active   = 0;
                 g_Enemies[j].health--;
@@ -1067,18 +1239,22 @@ void CheckCollisions()
                 {
                     g_Enemies[j].active = 0;
                     g_WaveKilled++;  // 1:1 CPC: ++wave_killed
-                    SpawnExplosion(g_Enemies[j].x + ENEMY_W/2 - 8,
-                                   g_Enemies[j].y + ENEMY_H/2 - 8,
+                    SpawnExplosion(g_Enemies[j].x + enemy_w/2 - 8,
+                                   g_Enemies[j].y + enemy_h/2 - 8,
                                    EXP_KIND_ENEMY);
-                    g_Score += g_EnemyScore[g_Enemies[j].type];
+                    // Boss scores differently
+                    if (g_Enemies[j].type == ENEMY_TYPE_BOSS)
+                        g_Score += ENEMY_SCORE_BOSS;
+                    else
+                        g_Score += g_EnemyScore[g_Enemies[j].type];
                     if (g_Score > 65535u) g_Score = 65535u;
                     g_HudDirty = 1;
                 }
                 else
                 {
-                    // Enemic amb vida però tocat (heavy/bomber)
-                    SpawnExplosion(g_Enemies[j].x + ENEMY_W/2 - 8,
-                                   g_Enemies[j].y + ENEMY_H/2 - 8,
+                    // Enemy with remaining health hit (heavy/bomber/boss)
+                    SpawnExplosion(g_Enemies[j].x + enemy_w/2 - 8,
+                                   g_Enemies[j].y + enemy_h/2 - 8,
                                    EXP_KIND_ENEMY);
                 }
             }
@@ -1091,8 +1267,13 @@ void CheckCollisions()
     for (j = 0; j < MAX_ENEMIES; j++)
     {
         if (!g_Enemies[j].active) continue;
+        
+        // Determine enemy hitbox size
+        enemy_w = (g_Enemies[j].type == ENEMY_TYPE_BOSS) ? ENEMY_BOSS_W : ENEMY_W;
+        enemy_h = (g_Enemies[j].type == ENEMY_TYPE_BOSS) ? ENEMY_BOSS_H : ENEMY_H;
+        
         if (RectOverlap(g_ShipX, g_ShipY, SHIP_W, SHIP_H,
-                        g_Enemies[j].x, g_Enemies[j].y, ENEMY_W, ENEMY_H))
+                        g_Enemies[j].x, g_Enemies[j].y, enemy_w, enemy_h))
         {
             g_Enemies[j].active = 0;
             TriggerShipHit();
@@ -1264,19 +1445,20 @@ void InitMenuStars()
 
 void DrawMenuStar(u8 idx)
 {
-    u8 state, tile;
+    u8 state, tile, x, y;
     if (g_MenuUseCenter && idx < MENU_STAR_CN)
     {
+        x = g_MenuStarCX[idx]; y = g_MenuStarCY[idx];
         state = g_MenuStarCState[idx];
-        tile  = (state == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + state - 1);
-        VDP_Poke_GM2(g_MenuStarCX[idx], g_MenuStarCY[idx], tile);
     }
     else if (!g_MenuUseCenter && idx < MENU_STAR_N)
     {
+        x = g_MenuStarX[idx]; y = g_MenuStarY[idx];
         state = g_MenuStarState[idx];
-        tile  = (state == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + state - 1);
-        VDP_Poke_GM2(g_MenuStarX[idx], g_MenuStarY[idx], tile);
     }
+    else return;
+    tile = (state == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + state - 1);
+    VDP_Poke_GM2(x, y, tile);
 }
 
 void TickMenuStars()
@@ -1291,7 +1473,6 @@ void TickMenuStars()
     g_MenuTwinkleRng = (u8)(g_MenuTwinkleRng * 17u + 29u);
     i = g_MenuTwinkleRng;
     while (i >= total) i = (u8)(i - total);
-
     if (g_MenuUseCenter)
         g_MenuStarCState[i] = (u8)((g_MenuStarCState[i] + 1u) & 3u);
     else
@@ -1302,7 +1483,6 @@ void TickMenuStars()
     j = g_MenuTwinkleRng;
     while (j >= total) j = (u8)(j - total);
     if (j == i) { j = (u8)(i + 7u); while (j >= total) j = (u8)(j - total); }
-
     if (g_MenuUseCenter)
         g_MenuStarCState[j] = (u8)((g_MenuStarCState[j] + 1u) & 3u);
     else
@@ -1685,11 +1865,10 @@ void DrawMenuScreen()
     InitMenuStarTiles();
     InitMenuStars();
 
-    // 1:1 CPC: estrelles centrals per pantalles sense logo
+    // 1:1 CPC: estrelles centrals NOMÉS per TOP3 (zona superior buida sense logo)
+    // HOW TO PLAY i HISCORE_INPUT usen estrelles laterals perque el text ocupa tot
     g_MenuUseCenter = (g_TitleMode == TS_ATTRACT_SCORE ||
-                       g_TitleMode == TS_HISCORE_VIEW  ||
-                       g_TitleMode == TS_HISCORE_INPUT ||
-                       g_TitleMode == TS_HELP) ? 1 : 0;
+                       g_TitleMode == TS_HISCORE_VIEW) ? 1 : 0;
 
     // Dibuixa estrelles inicials
     {
@@ -1732,8 +1911,7 @@ void DrawMenuScreen()
     else if (g_TitleMode == TS_HISCORE_VIEW)
     {
         HudDrawText(11, 6, "GAME OVER", HUD_FONT_COLOR_HI);
-        HudDrawHLine(0,  7, 32, HUD_FONT_COLOR_NRM);
-        HudDrawText(13, 8, "TOP 3", HUD_FONT_COLOR_HI);
+        HudDrawText(13, 8, "TOP 3",     HUD_FONT_COLOR_HI);
         HudDrawHLine(0,  9, 32, HUD_FONT_COLOR_CYN);
         DrawHiScoreTable();
         HudDrawHLine(0, 16, 32, HUD_FONT_COLOR_CYN);
@@ -1770,10 +1948,9 @@ void DrawMenuScreen()
     }
     else if (g_TitleMode == TS_HISCORE_INPUT)
     {
-        HudDrawHLine(0,  3, 32, HUD_FONT_COLOR_NRM);
+        // 1:1 CPC: GAME OVER + TOP3 + taula + entrada nom
         HudDrawText(11, 4, "GAME OVER", HUD_FONT_COLOR_HI);
-        HudDrawHLine(0,  5, 32, HUD_FONT_COLOR_NRM);
-        HudDrawText(13, 6, "TOP 3", HUD_FONT_COLOR_HI);
+        HudDrawText(13, 6, "TOP 3",     HUD_FONT_COLOR_HI);
         HudDrawHLine(0,  7, 32, HUD_FONT_COLOR_CYN);
         DrawHiScoreTable();
         HudDrawHLine(0, 16, 32, HUD_FONT_COLOR_CYN);
@@ -1804,6 +1981,11 @@ void DrawMenuScreen()
 // Crida quan acaba la partida per anar al menu correcte
 void EnterPostGame(u8 won)
 {
+    u8 s;
+    // Desactiva TOTS els sprites abans d'entrar al menu
+    for (s = 0; s < 32; s++)
+        VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
+
     g_LastScore = g_Score;
     g_LastLevel = g_Level;
 
@@ -1879,7 +2061,7 @@ void main()
     VDP_ClearVRAM();
     VDP_SetSpriteFlag(VDP_SPRITE_SIZE_16);
 
-    // Load sprites (una sola vegada)
+     // Load sprites (una sola vegada)
     VDP_LoadSpritePattern(g_SpriteWhite,      0,  4);
     VDP_LoadSpritePattern(g_SpriteRed,        4,  4);
     VDP_LoadSpritePattern(g_ShotPattern,      8,  1);
@@ -1894,6 +2076,8 @@ void main()
     VDP_LoadSpritePattern(g_EnemyDiverRed,    44, 4);
     VDP_LoadSpritePattern(g_EnemyBomberWhite, 48, 4);
     VDP_LoadSpritePattern(g_EnemyBomberRed,   52, 4);
+    VDP_LoadSpritePattern(g_BossWhite,        72, 4);
+    VDP_LoadSpritePattern(g_BossRed,          76, 4);
     VDP_LoadSpritePattern(g_ExpSprite0,       56, 4);
     VDP_LoadSpritePattern(g_ExpSprite1,       60, 4);
     VDP_LoadSpritePattern(g_ExpSprite2,       64, 4);
@@ -1941,64 +2125,75 @@ void main()
                 InitGamePlay();
             }
         }
-        else
-        {
-            //=== PLAYING ===
+         else
+         {
+             //=== PLAYING ===
 
-            // Wall scroll + starfield
-            UpdateWallScroll();
-            switch (g_StarTimer1 & 3)
-            {
-                case 0: TickStars(g_S1, N1, 1, STAR_TILE_BASE_1); break;
-                case 1: TickStars(g_S2, N2, 1, STAR_TILE_BASE_2); break;
-                case 2: TickStars(g_S3, N3, 2, STAR_TILE_BASE_3); break;
-                default: break;
-            }
-            g_StarTimer1++;
+             // Pause/unpause with P key
+             static u8 p_key_was_pressed = 0;
+             u8 p_key_pressed = IS_KEY_PRESSED(Keyboard_Read(9), 2);  // P = row 9, bit 2
+             if (p_key_pressed && !p_key_was_pressed)
+                 g_PausedFlag = !g_PausedFlag;
+             p_key_was_pressed = p_key_pressed;
 
-            // Input
-            if (!g_ShipExploding)
-            {
-                if (IS_KEY_PRESSED(row8, KEY_LEFT)  && g_ShipX > SHIP_MIN_X) g_ShipX -= g_ShipSpeedX;
-                if (IS_KEY_PRESSED(row8, KEY_RIGHT) && g_ShipX < SHIP_MAX_X) g_ShipX += g_ShipSpeedX;
-                if (IS_KEY_PRESSED(row8, KEY_UP)    && g_ShipY > SHIP_MIN_Y) g_ShipY -= g_ShipSpeedY;
-                if (IS_KEY_PRESSED(row8, KEY_DOWN)  && g_ShipY < SHIP_MAX_Y) g_ShipY += g_ShipSpeedY;
+             // Wall scroll + starfield (always update)
+             UpdateWallScroll();
+             switch (g_StarTimer1 & 3)
+             {
+                 case 0: TickStars(g_S1, N1, 1, STAR_TILE_BASE_1); break;
+                 case 1: TickStars(g_S2, N2, 1, STAR_TILE_BASE_2); break;
+                 case 2: TickStars(g_S3, N3, 2, STAR_TILE_BASE_3); break;
+                 default: break;
+             }
+             g_StarTimer1++;
 
-                if ((IS_KEY_PRESSED(row8, KEY_SPACE) || IS_KEY_PRESSED(row5, KEY_Z)) && g_FireCooldown == 0)
-                {
-                    for (i = 0; i < MAX_SHOTS; i++)
-                    {
-                        if (!g_Shots[i].active)
-                        {
-                            g_Shots[i].x = g_ShipX + SHIP_W / 2 - 2;
-                            g_Shots[i].y = g_ShipY - 8;
-                            g_Shots[i].active = 1;
-                            g_FireCooldown = FIRE_COOLDOWN;
-                            break;
-                        }
-                    }
-                }
-            }
+             // Skip game updates if paused
+             if (!g_PausedFlag)
+             {
+                 // Input
+                 if (!g_ShipExploding)
+                 {
+                     if (IS_KEY_PRESSED(row8, KEY_LEFT)  && g_ShipX > SHIP_MIN_X) g_ShipX -= g_ShipSpeedX;
+                     if (IS_KEY_PRESSED(row8, KEY_RIGHT) && g_ShipX < SHIP_MAX_X) g_ShipX += g_ShipSpeedX;
+                     if (IS_KEY_PRESSED(row8, KEY_UP)    && g_ShipY > SHIP_MIN_Y) g_ShipY -= g_ShipSpeedY;
+                     if (IS_KEY_PRESSED(row8, KEY_DOWN)  && g_ShipY < SHIP_MAX_Y) g_ShipY += g_ShipSpeedY;
 
-            // Update
-            if (g_FireCooldown > 0) g_FireCooldown--;
-            for (i = 0; i < MAX_SHOTS; i++)
-            {
-                if (!g_Shots[i].active) continue;
-                if (g_Shots[i].y < SHOT_SPEED) { g_Shots[i].active = 0; continue; }
-                g_Shots[i].y -= SHOT_SPEED;
-            }
+                     if ((IS_KEY_PRESSED(row8, KEY_SPACE) || IS_KEY_PRESSED(row5, KEY_Z)) && g_FireCooldown == 0)
+                     {
+                         for (i = 0; i < MAX_SHOTS; i++)
+                         {
+                             if (!g_Shots[i].active)
+                             {
+                                 g_Shots[i].x = g_ShipX + SHIP_W / 2 - 2;
+                                 g_Shots[i].y = g_ShipY - 8;
+                                 g_Shots[i].active = 1;
+                                 g_FireCooldown = FIRE_COOLDOWN;
+                                 break;
+                             }
+                         }
+                     }
+                 }
 
-            UpdateEnemies();
-            CheckCollisions();
-            TickExplosions();
-            UpdateWaveBonus();
-            UpdateShipExplosionState();
-            UpdateShipInvulnerability();
+                 // Update
+                 if (g_FireCooldown > 0) g_FireCooldown--;
+                 for (i = 0; i < MAX_SHOTS; i++)
+                 {
+                     if (!g_Shots[i].active) continue;
+                     if (g_Shots[i].y < SHOT_SPEED) { g_Shots[i].active = 0; continue; }
+                     g_Shots[i].y -= SHOT_SPEED;
+                 }
 
-            // Game over - 1:1 CPC: 30 frames de scroll dramatic, sense text
-            // El text "GAME OVER" apareix a la pantalla d'hiscore (menu)
-            if (g_ShipLastLife && !g_ShipExploding)
+                 UpdateEnemies();
+                 CheckCollisions();
+                 TickExplosions();
+                 UpdateWaveBonus();
+                 UpdateShipExplosionState();
+                 UpdateShipInvulnerability();
+             }
+
+             // Game over - 1:1 CPC: 30 frames de scroll dramatic, sense text
+             // El text "GAME OVER" apareix a la pantalla d'hiscore (menu)
+             if (g_ShipLastLife && !g_ShipExploding)
             {
                 if (g_GameOverDelay == 0)
                 {
@@ -2044,7 +2239,7 @@ void main()
                 if (g_EnemyShots[i].active)
                     VDP_SetSpriteSM1(spr++, g_EnemyShots[i].x, g_EnemyShots[i].y, 12, COLOR_MEDIUM_RED);
 
-            // Enemies
+             // Enemies
             {
                 static const u8 etype_pat_w[5] = {16, 24, 32, 40, 48};
                 static const u8 etype_pat_r[5] = {20, 28, 36, 44, 52};
@@ -2052,8 +2247,18 @@ void main()
                 {
                     if (!g_Enemies[i].active) continue;
                     j = g_Enemies[i].type;
-                    VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, etype_pat_w[j], COLOR_WHITE);
-                    VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, etype_pat_r[j], COLOR_MEDIUM_RED);
+                    
+                    if (j == ENEMY_TYPE_BOSS)
+                    {
+                        // Boss uses pattern indices 72 and 76
+                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, 72, COLOR_WHITE);
+                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, 76, COLOR_MEDIUM_RED);
+                    }
+                    else
+                    {
+                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, etype_pat_w[j], COLOR_WHITE);
+                        VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, etype_pat_r[j], COLOR_MEDIUM_RED);
+                    }
                 }
             }
 
