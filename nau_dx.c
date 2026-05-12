@@ -1996,22 +1996,23 @@ void main()
             UpdateShipExplosionState();
             UpdateShipInvulnerability();
 
-            // Game over - 1:1 CPC
+            // Game over - 1:1 CPC: 30 frames de scroll dramatic, sense text
+            // El text "GAME OVER" apareix a la pantalla d'hiscore (menu)
             if (g_ShipLastLife && !g_ShipExploding)
             {
                 if (g_GameOverDelay == 0)
                 {
-                    Print_SetPosition(9, 11);
-                    Print_DrawText("GAME OVER");
+                    // 1:1 CPC: sfxGameOver() - aqui podriem posar so
                     g_GameOverDelay = 1;
                 }
                 else if (g_GameOverDelay < 30)
                 {
+                    // Scroll segueix, pantalla buida de combat (dramatic)
                     g_GameOverDelay++;
                 }
                 else
                 {
-                    EnterPostGame(0); // game over, no victoria
+                    EnterPostGame(0);
                 }
             }
 
