@@ -1,6 +1,7 @@
 // Nau DX - MSX1 Port using MSXgl
 
 #include "msxgl.h"
+#include "psg.h"
 
 //=============================================================================
 // CONSTANTS
@@ -85,22 +86,26 @@
 
 // Boss tiers - 1:1 CPC
 #define BOSS_TIER_LEVEL_5    0     // Level 5: 12 HP, speed 1, 2 bullets
-#define BOSS_TIER_LEVEL_10   1     // Level 10: 17 HP, speed 1, 2 bullets
+#define BOSS_HP_PER_TIER     5
+#define BOSS_LANE_W          ((u8)(GAME_W / 3u))  // CPC: screen/3 per lane
+#define BOSS_HOLD_Y          74   // CPC: GAME_Y0+58
 #define BOSS_TIER_LEVEL_15   2     // Level 15: 22 HP, speed 2, 2 bullets
 #define BOSS_TIER_LEVEL_20   3     // Level 20: 27 HP, speed 2, 3 bullets
 #define BOSS_TIER_LEVEL_25   4     // Level 25: 32 HP, speed 3, 3 bullets
 #define BOSS_TIERS_MAX       5
 
 // Enemies
-#define MAX_ENEMIES        8   // CPC: WAVE_PLAN_MAX=8
+#define MAX_ENEMIES        5   // CPC: 5 (no WAVE_PLAN_MAX)
 #define ENEMY_W            12
 #define ENEMY_H            12
 #define ENEMY_BOSS_W       16   // Boss is 16x16
 #define ENEMY_BOSS_H       16
 #define ENEMYSHOT_W        2
 #define ENEMYSHOT_H        6
-#define ENEMYSHOT_SPEED_Y  3
-#define ENEMYSHOT_COOLDOWN 60
+#define ENEMYSHOT_SPEED_Y  5
+#define ENEMYSHOT_COOLDOWN 24
+#define ENEMYSHOT_VX_FAST  2
+#define ENEMYSHOT_VX_SLOW  1
 
 // Explosions
 #define MAX_EXPLOSIONS     4
@@ -108,7 +113,7 @@
 #define EXP_KIND_SHIP      1
 
 // Enemy shots
-#define MAX_ENEMY_SHOTS    6
+#define MAX_ENEMY_SHOTS    11
 #define SHIP_HIT_W         12
 #define SHIP_HIT_H         12
 #define SHIP_HIT_OX        2
@@ -164,7 +169,7 @@ static const u8 g_BarPattern[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 
 typedef struct { u8 x; u8 y; } TStar;
 typedef struct { u8 x; u8 y; u8 active; } TShot;
-typedef struct { u8 x; u8 y; u8 active; u8 type; u8 fire_cd; i8 vx; u8 vy; u8 pattern; u8 zig_timer; u8 health; } TEnemy;
+typedef struct { u8 x; u8 y; u8 active; u8 type; u8 fire_cd; i8 vx; u8 vy; u8 pattern; u8 zig_timer; u8 health; u8 boss_lane_x0; } TEnemy;
 typedef struct { u8 x; u8 y; u8 active; i8 vx; } TEnemyShot;
 typedef struct { u8 x; u8 y; u8 active; u8 frame; u8 kind; } TExplosion;
 typedef struct { u16 score; u8 level; u8 name[3]; } THiScore;
@@ -411,29 +416,33 @@ static const u8 g_BossRed[32] = {
 // Bytes 16-23: rows 8-15 left half
 // Bytes 24-31: rows 8-15 right half
 
-// White layer: complete outer ring (forms smooth circle)
-// MSX 16x16 sprite order: TL, BL, TR, BR (NO TL,TR,BL,BR!)
+// Boss sprite - CPC mothership ovni 16x16 faithful conversion  
+// Original CPC: C=Cyan W=White O=Orange Y=Yellow R=Red
+// Cyan layer (72): C+W+O → COLOR_CYAN (7)  
+// Red layer (76): Y+R → COLOR_MEDIUM_RED (8)
+// MSX 16x16 format: TL(8), BL(8), TR(8), BR(8)
+
 static const u8 g_BossWhiteNew[32] = {
-    // TL (rows 0-7, left half = px 0-7)
-    0x00, 0x0F, 0x3F, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF,
-    // BL (rows 8-15, left half = px 0-7)
-    0xFF, 0xFF, 0xFF, 0x7F, 0x3F, 0x1F, 0x07, 0x00,
-    // TR (rows 0-7, right half = px 8-15)
-    0x00, 0xF0, 0xFC, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF,
-    // BR (rows 8-15, right half = px 8-15)
-    0xFF, 0xFF, 0xFF, 0xFE, 0xFC, 0xF8, 0xE0, 0x00
+    // TL (rows 0-7, cols 0-7)
+    0x00, 0x0F, 0x3F, 0x7F, 0xF0, 0xE0, 0xC0, 0x80,
+    // BL (rows 8-15, cols 0-7)
+    0x80, 0xC0, 0xE0, 0x70, 0x30, 0x18, 0x00, 0x00,
+    // TR (rows 0-7, cols 8-15)
+    0x00, 0xF0, 0xFC, 0xFE, 0x0F, 0x07, 0x03, 0x01,
+    // BR (rows 8-15, cols 8-15)
+    0x01, 0x03, 0x07, 0x0E, 0x0C, 0x18, 0x00, 0x00
 };
 
-// Red layer: core nucleus (concentrated center pixels for red color effect)
+// Red layer: core nucleus + yellow accents
 static const u8 g_BossRedNew[32] = {
-    // TL (rows 0-7, left half = px 0-7)
-    0x00, 0x00, 0x06, 0x0F, 0x0F, 0x3F, 0x3F, 0x3F,
-    // BL (rows 8-15, left half = px 0-7)
-    0x3F, 0x3F, 0x3F, 0x0F, 0x06, 0x03, 0x00, 0x00,
-    // TR (rows 0-7, right half = px 8-15)
-    0x00, 0x00, 0x60, 0xF0, 0xF0, 0xFC, 0xFC, 0xFC,
-    // BR (rows 8-15, right half = px 8-15)
-    0xFC, 0xFC, 0xFC, 0xF0, 0x60, 0xC0, 0x00, 0x00
+    // TL (rows 0-7, cols 0-7)
+    0x00, 0x00, 0x00, 0x00, 0x0F, 0x1F, 0x3F, 0x7F,
+    // BL (rows 8-15, cols 0-7)
+    0x7F, 0x3F, 0x1F, 0x0F, 0x0F, 0x06, 0x06, 0x00,
+    // TR (rows 0-7, cols 8-15)
+    0x00, 0x00, 0x00, 0x00, 0xF0, 0xF8, 0xFC, 0xFE,
+    // BR (rows 8-15, cols 8-15)
+    0xFE, 0xFC, 0xF8, 0xF0, 0xF0, 0x60, 0x60, 0x00
 };
 
 //=============================================================================
@@ -951,7 +960,9 @@ static void StartNewWave()
         {
             if (!g_Enemies[i].active)
             {
-                g_Enemies[i].x       = (u8)(GAME_X0 + GAME_W / 2 - ENEMY_BOSS_W / 2);
+                u8 lane = Math_GetRandom8() % 3u;
+                g_Enemies[i].boss_lane_x0 = GAME_X0 + lane * BOSS_LANE_W;
+                g_Enemies[i].x       = g_Enemies[i].boss_lane_x0 + BOSS_LANE_W/2 - ENEMY_BOSS_W/2;
                 g_Enemies[i].y       = 18;
                 g_Enemies[i].active  = 1;
                 g_Enemies[i].type    = ENEMY_TYPE_BOSS;
@@ -959,21 +970,22 @@ static void StartNewWave()
                 g_Enemies[i].vy      = g_BossTierTable[tier].vy;
                 g_Enemies[i].vx      = 0;
                 g_Enemies[i].pattern = PATT_STRAIGHT;
-                g_Enemies[i].zig_timer = 0;
+                g_Enemies[i].zig_timer = (u8)(8u + (Math_GetRandom8() & 7u));
                 g_Enemies[i].fire_cd = g_BossTierTable[tier].fire_cd;
                 break;
             }
         }
         g_WaveBonusBase = ENEMY_SCORE_BOSS;
         g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
-        g_HudDirty = 1;  // Mostra barra HP immediatament
+        g_HudDirty = 1;
         return;
     }
     if (cfg->flags & LCFG_F_BOSS2)
     {
         // Dual boss (Level 25)
+        u8 lane = Math_GetRandom8() % 3u;
         g_WaveTotal = 2;
-        tier = 4;   // Tier 4 for Level 25
+        tier = 4;
         g_WaveSpawned = 2;
         
         // Spawn two bosses
@@ -981,11 +993,8 @@ static void StartNewWave()
         {
             if (!g_Enemies[i].active)
             {
-                if (g_WaveSpawned == 2)
-                    g_Enemies[i].x = (u8)(GAME_X0 + GAME_W / 2 - ENEMY_BOSS_W / 2 - 20);  // Left
-                else
-                    g_Enemies[i].x = (u8)(GAME_X0 + GAME_W / 2 - ENEMY_BOSS_W / 2 + 20);  // Right
-                
+                g_Enemies[i].boss_lane_x0 = GAME_X0 + lane * BOSS_LANE_W;
+                g_Enemies[i].x       = g_Enemies[i].boss_lane_x0 + BOSS_LANE_W/2 - ENEMY_BOSS_W/2;
                 g_Enemies[i].y       = 18;
                 g_Enemies[i].active  = 1;
                 g_Enemies[i].type    = ENEMY_TYPE_BOSS;
@@ -993,12 +1002,13 @@ static void StartNewWave()
                 g_Enemies[i].vy      = g_BossTierTable[tier].vy;
                 g_Enemies[i].vx      = 0;
                 g_Enemies[i].pattern = PATT_STRAIGHT;
-                g_Enemies[i].zig_timer = 0;
+                g_Enemies[i].zig_timer = (u8)(8u + (Math_GetRandom8() & 7u));
                 g_Enemies[i].fire_cd = g_BossTierTable[tier].fire_cd;
+                lane = (lane + 1u) % 3u;  // Next lane for second boss
                 g_WaveSpawned--;
             }
         }
-        g_WaveSpawned = 2;  // Reset spawn count
+        g_WaveSpawned = 2;
         g_WaveBonusBase = ENEMY_SCORE_BOSS;
         g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
         return;
@@ -1073,7 +1083,10 @@ static void UpdateWaveBonus()
         {
             g_WavesCleared = 0;
             if (g_Level < ENDGAME_FINAL_LEVEL)
+            {
                 g_Level++;
+                sfxLevelUp();
+            }
             g_HudDirty = 1;
         }
     }
@@ -1105,12 +1118,14 @@ void SpawnEnemyShot(u8 ex, u8 ey)
     {
         if (!g_EnemyShots[i].active)
         {
-            // Apunta cap a la nau
+            // 1:1 CPC: enemyShotAimVX
             i16 dx = (i16)g_ShipX - (i16)ex;
-            if      (dx < -10) vx = -1;
-            else if (dx >  10) vx =  1;
-            else               vx =  0;
-            g_EnemyShots[i].x      = ex + ENEMY_W / 2;
+            if      (dx <= -12) vx = -ENEMYSHOT_VX_FAST;
+            else if (dx <=  -4) vx = -ENEMYSHOT_VX_SLOW;
+            else if (dx >=  12) vx =  ENEMYSHOT_VX_FAST;
+            else if (dx >=   4) vx =  ENEMYSHOT_VX_SLOW;
+            else                vx =  0;
+            g_EnemyShots[i].x      = ex + ENEMY_W / 2 - 1;
             g_EnemyShots[i].y      = ey + ENEMY_H;
             g_EnemyShots[i].vx     = vx;
             g_EnemyShots[i].active = 1;
@@ -1161,24 +1176,68 @@ void UpdateEnemies()
         // Boss-specific behavior
         if (g_Enemies[i].type == ENEMY_TYPE_BOSS)
         {
-            // Boss descends and oscillates
-            g_Enemies[i].y += g_Enemies[i].vy;
+            // 1:1 CPC: move boss with lane system
+            u8 tw = BOSS_LANE_W;
+            u8 xmn = g_Enemies[i].boss_lane_x0;
+            u8 xmx = (u8)(xmn + tw - ENEMY_BOSS_W);
+            if (xmx > (u8)(GAME_X1 - ENEMY_BOSS_W)) xmx = (u8)(GAME_X1 - ENEMY_BOSS_W);
+            if (xmn < GAME_X0) xmn = GAME_X0;
             
-            // Hold at midscreen (Y=74) and oscillate horizontally
-            if (g_Enemies[i].y >= 74)
-                g_Enemies[i].y = 74;
-            
-            // Boss oscillation: every 10-25 frames, change direction randomly
-            if (g_Enemies[i].zig_timer) 
-                g_Enemies[i].zig_timer--;
-            else 
-            { 
-                g_Enemies[i].zig_timer = 10 + (Math_GetRandom8() & 15);  // 10-25 frames
-                g_Enemies[i].vx = (Math_GetRandom8() & 1) ? 1 : -1;
+            // Dive to hold Y position
+            if (g_Enemies[i].y < BOSS_HOLD_Y)
+            {
+                g_Enemies[i].y += g_Enemies[i].vy;
+                if (g_Enemies[i].y > BOSS_HOLD_Y) g_Enemies[i].y = BOSS_HOLD_Y;
             }
-            g_Enemies[i].x = (u8)((i8)g_Enemies[i].x + g_Enemies[i].vx);
-            if (g_Enemies[i].x < GAME_X0)              g_Enemies[i].x = GAME_X0;
-            if (g_Enemies[i].x > GAME_X1 - ENEMY_BOSS_W) g_Enemies[i].x = GAME_X1 - ENEMY_BOSS_W;
+            
+            // CPC-style random lateral oscillation
+            if (g_Enemies[i].zig_timer)
+                g_Enemies[i].zig_timer--;
+            else
+            {
+                u8 r;
+                g_Enemies[i].zig_timer = (u8)(10u + (Math_GetRandom8() & 15u));
+                r = Math_GetRandom8() & 7u;
+                if (r < 2u)
+                    g_Enemies[i].vx = (i8)-g_Enemies[i].vx;  // reverse
+                else if (r < 4u)
+                {
+                    if (g_Enemies[i].vx)
+                        g_Enemies[i].vx = 0;
+                    else
+                        g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? (i8)1 : (i8)-1;
+                }
+                else if (r < 6u)
+                {
+                    if (g_Enemies[i].vx < 0)
+                        g_Enemies[i].vx = -2;
+                    else if (g_Enemies[i].vx > 0)
+                        g_Enemies[i].vx = 2;
+                    else
+                        g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? (i8)1 : (i8)-1;
+                }
+                else
+                    g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? (i8)1 : (i8)-1;
+            }
+            
+            // Move and constrain to lane
+            {
+                i16 nxx = (i16)g_Enemies[i].x + (i16)g_Enemies[i].vx;
+                if (nxx < (i16)xmn)
+                {
+                    g_Enemies[i].x = xmn;
+                    g_Enemies[i].vx = (i8)-g_Enemies[i].vx;
+                    if (!g_Enemies[i].vx) g_Enemies[i].vx = 1;
+                }
+                else if (nxx > (i16)xmx)
+                {
+                    g_Enemies[i].x = xmx;
+                    g_Enemies[i].vx = (i8)-g_Enemies[i].vx;
+                    if (!g_Enemies[i].vx) g_Enemies[i].vx = -1;
+                }
+                else
+                    g_Enemies[i].x = (u8)nxx;
+            }
             
             // Boss firing: determine tier to get bullet count
             tier = (g_Level >= 25) ? 4 : ((g_Level - 1) / 5);
@@ -1232,6 +1291,156 @@ void UpdateEnemies()
 
 //=============================================================================
 // COLLISIONS
+//=============================================================================
+// SOUND FX - 1:1 CPC (AY-3-8910 / YM2149)
+//=============================================================================
+
+#define SFX_NONE        0
+#define SFX_EXP_ENEMY   1
+#define SFX_EXP_SHIP    2
+#define SFX_SHOT        3
+#define SFX_BEEP        4
+#define SFX_GAMEOVER    5
+#define SFX_BOSSWARN    6
+#define SFX_LEVELUP     7
+
+static u8 sfxA_kind = SFX_NONE, sfxA_frame = 0;
+static u8 sfxB_kind = SFX_NONE, sfxB_frame = 0;
+static u8 sfxC_kind = SFX_NONE, sfxC_frame = 0;
+
+static void setToneA(u8 lo, u8 hi, u8 vol) {
+    PSG_SetRegister(0, lo); PSG_SetRegister(1, hi); PSG_SetRegister(8, vol);
+}
+static void setToneB(u8 lo, u8 hi, u8 vol) {
+    PSG_SetRegister(2, lo); PSG_SetRegister(3, hi); PSG_SetRegister(9, vol);
+}
+static void setToneC(u8 lo, u8 hi, u8 vol) {
+    PSG_SetRegister(4, lo); PSG_SetRegister(5, hi); PSG_SetRegister(10, vol);
+}
+
+static void updateMixer(void) {
+    u8 mixer = 0x3F;
+    if (sfxA_kind == SFX_GAMEOVER || sfxB_kind == SFX_GAMEOVER || sfxC_kind == SFX_GAMEOVER) {
+        mixer &= (u8)~0x01; mixer &= (u8)~0x02; mixer &= (u8)~0x04;
+    } else if (sfxA_kind == SFX_LEVELUP) {
+        mixer &= (u8)~0x01;
+    } else if (sfxA_kind == SFX_BEEP || sfxB_kind == SFX_BEEP) {
+        mixer &= (u8)~0x01; mixer &= (u8)~0x02;
+    } else {
+        if (sfxA_kind != SFX_NONE) mixer &= (u8)~0x01;
+        if (sfxB_kind == SFX_EXP_ENEMY) mixer &= (u8)~0x10;
+        else if (sfxB_kind == SFX_EXP_SHIP) { mixer &= (u8)~0x02; mixer &= (u8)~0x10; }
+        else if (sfxB_kind != SFX_NONE) mixer &= (u8)~0x02;
+        if (sfxC_kind == SFX_SHOT) mixer &= (u8)~0x04;
+    }
+    PSG_SetRegister(7, mixer);
+}
+
+void soundStopAll(void) {
+    sfxA_kind = SFX_NONE; sfxA_frame = 0;
+    sfxB_kind = SFX_NONE; sfxB_frame = 0;
+    sfxC_kind = SFX_NONE; sfxC_frame = 0;
+    PSG_SetRegister(7, 0x3F);
+    PSG_SetRegister(8, 0); PSG_SetRegister(9, 0); PSG_SetRegister(10, 0);
+    PSG_SetRegister(0, 0); PSG_SetRegister(1, 0);
+    PSG_SetRegister(2, 0); PSG_SetRegister(3, 0);
+    PSG_SetRegister(4, 0); PSG_SetRegister(5, 0);
+    PSG_SetRegister(6, 0x1F);
+}
+
+void soundInit(void) { soundStopAll(); }
+void sfxShot(void) { sfxC_kind = SFX_SHOT; sfxC_frame = 0; }
+void sfxEnemyExplosion(void) { sfxB_kind = SFX_EXP_ENEMY; sfxB_frame = 0; }
+void sfxShipExplosion(void) { sfxB_kind = SFX_EXP_SHIP; sfxB_frame = 0; }
+void sfxBeep(void) { sfxA_kind = SFX_BEEP; sfxA_frame = 0; sfxB_kind = SFX_BEEP; sfxB_frame = 0; }
+void sfxGameOver(void) { sfxA_kind = SFX_GAMEOVER; sfxA_frame = 0; sfxB_kind = SFX_GAMEOVER; sfxB_frame = 0; }
+void sfxLevelUp(void) { sfxA_kind = SFX_LEVELUP; sfxA_frame = 0; }
+
+static void tickChannelA(void) {
+    if (sfxA_kind == SFX_BEEP) {
+        if (sfxA_frame < 2)           setToneA(239, 0, 15);
+        else if (sfxA_frame == 2)     PSG_SetRegister(8, 0);
+        else if (sfxA_frame < 5)      setToneA(190, 0, 15);
+        else { sfxA_kind = SFX_NONE; sfxA_frame = 0; PSG_SetRegister(8, 0); return; }
+        ++sfxA_frame; return;
+    }
+    if (sfxA_kind == SFX_LEVELUP) {
+        if      (sfxA_frame < 2)  setToneA(239, 0, 14);
+        else if (sfxA_frame < 4)  setToneA(190, 0, 14);
+        else if (sfxA_frame < 6)  setToneA(160, 0, 13);
+        else if (sfxA_frame < 8)  setToneA(119, 0, 15);
+        else if (sfxA_frame < 11) setToneA(119, 0, 7);
+        else { sfxA_kind = SFX_NONE; sfxA_frame = 0; PSG_SetRegister(8, 0); return; }
+        ++sfxA_frame; return;
+    }
+    if (sfxA_kind == SFX_GAMEOVER) {
+        if (sfxA_frame < 24) { setToneA(28, 1, 12); }
+        else { sfxA_kind = SFX_NONE; sfxA_frame = 0; PSG_SetRegister(8, 0); return; }
+        ++sfxA_frame; return;
+    }
+    PSG_SetRegister(8, 0);
+}
+static void tickChannelB(void) {
+    if (sfxB_kind == SFX_EXP_ENEMY) {
+        switch (sfxB_frame) {
+            case 0: PSG_SetRegister(6, 0x04); PSG_SetRegister(9, 13); break;
+            case 1: PSG_SetRegister(6, 0x07); PSG_SetRegister(9, 11); break;
+            case 2: PSG_SetRegister(6, 0x0B); PSG_SetRegister(9,  9); break;
+            case 3: PSG_SetRegister(6, 0x10); PSG_SetRegister(9,  6); break;
+            case 4: PSG_SetRegister(6, 0x16); PSG_SetRegister(9,  3); break;
+            default: sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetRegister(9, 0); return;
+        }
+        ++sfxB_frame; return;
+    }
+    if (sfxB_kind == SFX_EXP_SHIP) {
+        switch (sfxB_frame) {
+            case 0: setToneB(220, 0, 15); PSG_SetRegister(6, 0x04); break;
+            case 1: setToneB(180, 0, 14); PSG_SetRegister(6, 0x06); break;
+            case 2: setToneB(150, 0, 12); PSG_SetRegister(6, 0x08); break;
+            case 3: setToneB(120, 0, 10); PSG_SetRegister(6, 0x0C); break;
+            case 4: setToneB( 90, 0,  8); PSG_SetRegister(6, 0x12); break;
+            case 5: setToneB( 70, 0,  6); PSG_SetRegister(6, 0x16); break;
+            case 6: setToneB( 50, 0,  4); PSG_SetRegister(6, 0x1B); break;
+            default: sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetRegister(9, 0); return;
+        }
+        ++sfxB_frame; return;
+    }
+    if (sfxB_kind == SFX_BEEP) {
+        if (sfxB_frame < 2)           setToneB(190, 0, 12);
+        else if (sfxB_frame == 2)     PSG_SetRegister(9, 0);
+        else if (sfxB_frame < 5)      setToneB(159, 0, 12);
+        else { sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetRegister(9, 0); return; }
+        ++sfxB_frame; return;
+    }
+    if (sfxB_kind == SFX_GAMEOVER) {
+        if (sfxB_frame < 24) { setToneB(239, 0, 12); }
+        else { sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetRegister(9, 0); return; }
+        ++sfxB_frame; return;
+    }
+    PSG_SetRegister(9, 0);
+}
+static void tickChannelC(void) {
+    if (sfxC_kind == SFX_SHOT) {
+        if (sfxC_frame == 0)          setToneC(160, 0, 9);
+        else if (sfxC_frame == 1)     setToneC(112, 0, 4);
+        else { sfxC_kind = SFX_NONE; sfxC_frame = 0; PSG_SetRegister(10, 0); return; }
+        ++sfxC_frame; return;
+    }
+    if (sfxC_kind == SFX_GAMEOVER) {
+        if (sfxC_frame < 24) { setToneC(190, 0, 12); }
+        else { sfxC_kind = SFX_NONE; sfxC_frame = 0; PSG_SetRegister(10, 0); return; }
+        ++sfxC_frame; return;
+    }
+    PSG_SetRegister(10, 0);
+}
+void soundTick(void) {
+    tickChannelA();
+    tickChannelB();
+    tickChannelC();
+    updateMixer();
+    PSG_Apply();
+}
+
 //=============================================================================
 // COLLISIONS + SHIP HIT
 //=============================================================================
@@ -1306,6 +1515,7 @@ void TriggerShipHit()
     u8 i;
     // 1:1 CPC: triggerShipHit
     SpawnExplosion(g_ShipX, g_ShipY, EXP_KIND_SHIP);
+    sfxShipExplosion();
     if (g_Lives == 0)
         g_ShipLastLife = 1;
     else
@@ -1364,6 +1574,7 @@ void CheckCollisions()
                     SpawnExplosion(g_Enemies[j].x + enemy_w/2 - 8,
                                    g_Enemies[j].y + enemy_h/2 - 8,
                                    EXP_KIND_ENEMY);
+                    sfxEnemyExplosion();
                     // Boss scores differently
                     if (g_Enemies[j].type == ENEMY_TYPE_BOSS)
                         g_Score += ENEMY_SCORE_BOSS;
@@ -2290,6 +2501,7 @@ void main()
 
     // Init hi-scores
     InitHiScores();
+    soundInit();
 
     // Mostra menu inicial
     g_GameState  = GS_TITLE;
@@ -2382,11 +2594,14 @@ void main()
                                  g_Shots[i].y = g_ShipY - 8;
                                  g_Shots[i].active = 1;
                                  g_FireCooldown = FIRE_COOLDOWN;
+                                 sfxShot();
                                  break;
-                             }
-                         }
-                     }
-                 }
+              }
+         }
+         soundTick();
+    }
+}
+
 
                  // Update
                  if (g_FireCooldown > 0) g_FireCooldown--;
@@ -2411,7 +2626,7 @@ void main()
             {
                 if (g_GameOverDelay == 0)
                 {
-                    // 1:1 CPC: sfxGameOver() - aqui podriem posar so
+                    sfxGameOver();
                     g_GameOverDelay = 1;
                 }
                 else if (g_GameOverDelay < 30)
@@ -2485,7 +2700,7 @@ void main()
                          
                          if (j == ENEMY_TYPE_BOSS)
                          {
-                             g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = 72;  g_SprBuf[spr*4+3] = COLOR_WHITE;      spr++;
+                             g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = 72;  g_SprBuf[spr*4+3] = COLOR_CYAN;      spr++;
                              g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = 76;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
                          }
                          else

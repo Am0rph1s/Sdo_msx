@@ -20,7 +20,7 @@ ProjName = "nau_dx";
 ProjModules = [ ProjName ];
 
 //-- List of library modules to build
-LibModules = [ "system", "bios", "vdp", "print", "input", "memory", "math", "draw" ];
+LibModules = [ "system", "bios", "vdp", "print", "input", "memory", "math", "draw", "psg" ];
 
 //-- Target MSX machine version
 Machine = "1";
