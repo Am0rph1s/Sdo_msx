@@ -143,15 +143,22 @@
 #define HUD_FONT_COLOR_HI   0xF1  // White (15) on Black (1)
 #define HUD_FONT_COLOR_CYN  0x71  // Cyan (7) on Black
 #define HLINE_TILE         126   // Tile for cyan separator lines (NOT 167 - conflicts with HI font space!)
+#define BAR_FILL_TILE      125   // Tile for boss HP bar fill
+
+// HUD right-side layout (columns 22-31)
+#define HUD_COL 22
 
 // Helper: check if a redefinable key is pressed
 u8 IsKeyPressed(u8 key) { return IS_KEY_PRESSED(Keyboard_Read(key & 0x0F), key); }
+
+// Barra HP del boss - patro i color (static const perque es carrega a InitGamePlay)
+static const u8 g_BarPattern[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 
 // Hi-scores
 #define HISCORE_COUNT    3
 
 // Wall scroll
-#define WALL_TILE_BASE     200
+#define WALL_TILE_BASE     90   // Abans 200: solapava amb font HI (nums 6-9)
 #define WALL_SPEED         4
 
 //=============================================================================
@@ -231,6 +238,7 @@ static u8  g_WavesCleared  = 0;
 static u8  g_WaveMode      = WAVE_MODE_RANK;
 static u8  g_SpawnTimer    = SPAWN_FIRST_DELAY;
 static u8  g_WaveIndianDelay = 0;
+static u8  g_BonusDisplayCnt = 0;  // Comptador per mostrar "XN" al completar wave
 static u16 g_WaveBonusBase = 10;
 static u8  g_WaveSlotX[WAVE_PLAN_MAX];
 static u8  g_WaveSlotY[WAVE_PLAN_MAX];
@@ -624,27 +632,100 @@ void TickStars(TStar* s, u8 n, u8 speed, u8 base)
 // HUD
 //=============================================================================
 
+// Forward declarations
+void HudDrawText(u8 col, u8 row, const char* s, u8 colorByte);
+void HudDrawHLine(u8 col, u8 row, u8 len, u8 colorByte);
+
+// Boss max HP per tier (defined in table below)
+static u8 GetBossMaxHP(u8 tier)
+{
+    static const u8 hpt[5] = {12, 17, 22, 27, 32};
+    if (tier > 4) tier = 4;
+    return hpt[tier];
+}
+
 void UpdateHUD()
 {
+    u8 i, t;
     if (!g_HudDirty) return;
 
-    // Score - esborra i redibouxa
-    Print_SetPosition(22, 1);
-    Print_DrawText("     "); // esborra
-    Print_SetPosition(22, 1);
-    Print_DrawInt(g_Score);
+    // Score (rows 0-1)
+    HudDrawText(HUD_COL, 0, "SCORE", HUD_FONT_COLOR_HI);
+    {
+        u16 s = g_Score;
+        char buf[6];
+        buf[4] = (char)('0' + s % 10); s /= 10;
+        buf[3] = (char)('0' + s % 10); s /= 10;
+        buf[2] = (char)('0' + s % 10); s /= 10;
+        buf[1] = (char)('0' + s % 10); s /= 10;
+        buf[0] = (char)('0' + s % 10);
+        buf[5] = 0;
+        HudDrawText(HUD_COL, 1, buf, HUD_FONT_COLOR_HI);
+    }
 
-    // Level
-    Print_SetPosition(22, 3);
-    Print_DrawText("  ");
-    Print_SetPosition(22, 3);
-    Print_DrawInt(g_Level);
+    // Wave bonus (rows 3-4) - nomes es mostra breument al completar wave
+    if (g_BonusDisplayCnt > 0)
+    {
+        HudDrawText(HUD_COL, 3, "BONUS", HUD_FONT_COLOR_NRM);
+        char buf[4];
+        buf[0] = 'X';
+        buf[1] = (char)('0' + g_WaveTotal);
+        buf[2] = 0;
+        HudDrawText(HUD_COL, 4, buf, HUD_FONT_COLOR_HI);
+    }
+    else
+    {
+        HudDrawText(HUD_COL, 3, "     ", HUD_FONT_COLOR_NRM);
+        HudDrawText(HUD_COL, 4, "     ", HUD_FONT_COLOR_NRM);
+    }
 
-    // Lives - esborra i redibuixa
-    Print_SetPosition(22, 5);
-    Print_DrawText("  ");
-    Print_SetPosition(22, 5);
-    Print_DrawInt(g_Lives);
+    // Level (rows 6-7)
+    HudDrawText(HUD_COL, 6, "LEVEL", HUD_FONT_COLOR_NRM);
+    {
+        char buf[3];
+        buf[0] = (char)('0' + g_Level / 10);
+        buf[1] = (char)('0' + g_Level % 10);
+        buf[2] = 0;
+        HudDrawText(HUD_COL, 7, buf, HUD_FONT_COLOR_HI);
+    }
+
+    // Lives (rows 9-10)
+    HudDrawText(HUD_COL, 9, "LIVES", HUD_FONT_COLOR_NRM);
+    {
+        char buf[2];
+        buf[0] = (char)('0' + g_Lives);
+        buf[1] = 0;
+        HudDrawText(HUD_COL, 10, buf, HUD_FONT_COLOR_HI);
+    }
+
+    // Boss HP bar (row 12+, only during boss waves)
+    {
+        u8 has_boss = 0;
+        u8 cur_hp = 0;
+        for (i = 0; i < MAX_ENEMIES; i++)
+        {
+            if (g_Enemies[i].active && g_Enemies[i].type == ENEMY_TYPE_BOSS)
+            {
+                cur_hp = g_Enemies[i].health;
+                has_boss = 1;
+                break;
+            }
+        }
+        if (has_boss)
+        {
+            u8 tier = (g_Level >= 25) ? 4 : ((g_Level - 1) / 5);
+            u8 max_hp = GetBossMaxHP(tier);
+            HudDrawText(HUD_COL, 12, "HP", HUD_FONT_COLOR_HI);
+            u8 filled = (u8)((u16)cur_hp * 5u / max_hp);
+            for (t = 0; t < 5; t++)
+                VDP_Poke_GM2((u8)(HUD_COL + 3 + t), 12, (t < filled) ? BAR_FILL_TILE : 0);
+        }
+        else
+        {
+            // Clear HP area if boss inactive
+            HudDrawText(HUD_COL, 12, "          ", HUD_FONT_COLOR_NRM);
+        }
+    }
 
     g_HudDirty = 0;
 }
@@ -943,6 +1024,7 @@ static void StartNewWave()
         }
         g_WaveBonusBase = ENEMY_SCORE_BOSS;
         g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
+        g_HudDirty = 1;  // Mostra barra HP immediatament
         return;
     }
     if (cfg->flags & LCFG_F_BOSS2)
@@ -1027,6 +1109,7 @@ static void SpawnWave()
 static void UpdateWaveBonus()
 {
     if (!g_WaveActive) return;
+    if (g_ShipExploding) return;  // No avancis wave si el jugador esta morint
     if (CountActiveEnemies()) return;
     if (g_WaveSpawned < g_WaveTotal) return;
 
@@ -1037,6 +1120,7 @@ static void UpdateWaveBonus()
         g_Score += bonus;
         if (g_Score > 65535u) g_Score = 65535u;
         g_HudDirty = 1;
+        g_BonusDisplayCnt = 30;  // Mostra "XN" cada cop que es compleix una wave
     }
 
     g_WavesCleared++;
@@ -1047,10 +1131,8 @@ static void UpdateWaveBonus()
         {
             g_WavesCleared = 0;
             if (g_Level < ENDGAME_FINAL_LEVEL)
-            {
                 g_Level++;
-                g_HudDirty = 1;
-            }
+            g_HudDirty = 1;
         }
     }
     g_WaveActive = 0;
@@ -1259,12 +1341,11 @@ void UpdateShipExplosionState()
 {
     // 1:1 CPC: updateShipExplosionState
     if (!g_ShipExploding) return;
-    if (g_ShipExplTimer) { g_ShipExplTimer--; return; }
-    // Timer acabat
+    if (g_ShipExplTimer > 0) { g_ShipExplTimer--; return; }
+    // CPC: game over check
     if (g_ShipLastLife) { g_ShipExploding = 0; return; } // game over, no respawn
+    // CPC: resetShipRuntimeState() + placeShipAtSpawn()
     RespawnShip();
-    g_ShipInvul      = 1;
-    g_ShipInvulTimer = RESPAWN_INVUL_TICKS;
 }
 
 void UpdateShipInvulnerability()
@@ -1295,6 +1376,7 @@ void TriggerShipHit()
     for (i = 0; i < MAX_ENEMIES;     i++) g_Enemies[i].active    = 0;
     for (i = 0; i < MAX_SHOTS;       i++) g_Shots[i].active      = 0;
     for (i = 0; i < MAX_ENEMY_SHOTS; i++) g_EnemyShots[i].active = 0;
+    g_WaveActive = 0;  // CPC: clearAllEnemies sets wave_active=0
 }
 
 u8 RectOverlap(u8 x1, u8 y1, u8 w1, u8 h1, u8 x2, u8 y2, u8 w2, u8 h2){
@@ -1348,6 +1430,7 @@ void CheckCollisions()
                     SpawnExplosion(g_Enemies[j].x + enemy_w/2 - 8,
                                    g_Enemies[j].y + enemy_h/2 - 8,
                                    EXP_KIND_ENEMY);
+                    g_HudDirty = 1;  // Update HUD (boss HP bar etc.)
                 }
             }
         }
@@ -2191,20 +2274,26 @@ void ResetGameSession()
 
 void InitGamePlay()
 {
+    u8 bank, t;
     // Inicialitza pantalla de joc
     VDP_FillScreen_GM2(0);
-    Print_SetPosition(22, 0);  Print_DrawText("SC:");
-    Print_SetPosition(22, 2);  Print_DrawText("LV:");
-    Print_SetPosition(22, 4);  Print_DrawText("LI:");
+    InitHudFontTiles();   // Recarrega font (sobreescrita per star tiles 168-170)
+    // Precarrega patro de barra HP (tile 125, càrrega única)
+    {
+        u8 bar_col[8];
+        for (t = 0; t < 8; t++) bar_col[t] = 0x81;  // Medium red on black
+        for (bank = 0; bank < 3; bank++)
+        {
+            VDP_LoadBankPattern_GM2(g_BarPattern, 1, bank, BAR_FILL_TILE);
+            VDP_LoadBankColor_GM2(bar_col,        1, bank, BAR_FILL_TILE);
+        }
+    }
     InitWallTiles();
     InitStarTiles();
     InitStars(g_S1, N1, STAR_TILE_BASE_1);
     InitStars(g_S2, N2, STAR_TILE_BASE_2);
     InitStars(g_S3, N3, STAR_TILE_BASE_3);
     ResetGameSession();
-    Print_SetPosition(22, 1); Print_DrawInt(g_Score);
-    Print_SetPosition(22, 3); Print_DrawInt(g_Level);
-    Print_SetPosition(22, 5); Print_DrawInt(g_Lives);
 }
 
 //=============================================================================
@@ -2387,6 +2476,13 @@ void main()
              // Victoria (nivell final completat)
              if (g_Level > ENDGAME_FINAL_LEVEL)
                  EnterPostGame(1);
+
+             // Decrementa timer de display de bonus (cada frame, no nomes quan HudDirty)
+             if (g_BonusDisplayCnt > 0)
+             {
+                 g_BonusDisplayCnt--;
+                 g_HudDirty = 1;  // Força actualitzacio HUD mentre el timer corre
+             }
 
              if (g_GameState == GS_PLAYING)
                  UpdateHUD();
