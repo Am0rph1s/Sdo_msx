@@ -24,18 +24,15 @@
 #define SHIP_MAX_Y      (SCREEN_H - SHIP_H - 8)
 
 #define MAX_SHOTS       4
-#define SHOT_SPEED      4
-#define FIRE_COOLDOWN   10
+#define SHOT_SPEED      6
+#define FIRE_COOLDOWN   3   // CPC: 1 (cada 2 frames), nosaltres 3 (cada 4)
 
-// Starfield - 3 layers
-#define N1              4    // slow stars
-#define N2              7    // medium stars
-#define N3              11   // fast stars
+// Starfield - 3 layers (mes estels i mes rapid que l'original)
+#define N1              8    // slow stars
+#define N2              12   // medium stars
+#define N3              16   // fast stars
 #define STAR_X0         (GAME_X0 + 4)
 #define STAR_X1         (GAME_X1 - 4)
-#define STAR_SPEED1     1    // 1px every 4 frames
-#define STAR_SPEED2     1    // 1px every 2 frames
-#define STAR_SPEED3     2    // 2px every 2 frames
 
 // Enemy types - 1:1 CPC
 #define ENEMY_TYPE_BASIC   0
@@ -46,11 +43,11 @@
 #define ENEMY_TYPE_BOSS    5
 
 // Enemy speeds - 1:1 CPC (adaptats a MSX: CPC té 50Hz i pixels més grans)
-#define ENEMY_SPEED_BASIC   1
-#define ENEMY_SPEED_FAST    2
-#define ENEMY_SPEED_HEAVY   1
-#define ENEMY_SPEED_DIVER   2
-#define ENEMY_SPEED_BOMBER  1
+#define ENEMY_SPEED_BASIC   3
+#define ENEMY_SPEED_FAST    3
+#define ENEMY_SPEED_HEAVY   2
+#define ENEMY_SPEED_DIVER   4
+#define ENEMY_SPEED_BOMBER  2
 #define ENEMY_SPEED_BOSS    1   // Boss moves at 1 px/frame vertically
 
 // Enemy scores - 1:1 CPC
@@ -178,8 +175,8 @@ typedef struct { u8 waves; u8 per_wave; u8 mask; u8 flags; u8 intro_mask; } TLev
 //=============================================================================
 
 static u8  g_ShipX, g_ShipY;
-static u8  g_ShipSpeedX = 3;
-static u8  g_ShipSpeedY = 3;
+static u8  g_ShipSpeedX = 4;
+static u8  g_ShipSpeedY = 4;
 static u8  g_ShipExploding  = 0;
 static u8  g_ShipExplTimer  = 0;
 static u8  g_ShipInvul      = 0;
@@ -240,6 +237,7 @@ static u8  g_SpawnTimer    = SPAWN_FIRST_DELAY;
 static u8  g_WaveIndianDelay = 0;
 static u8  g_BonusDisplayCnt = 0;  // Comptador per mostrar "XN" al completar wave
 static u16 g_WaveBonusBase = 10;
+static u8  g_SprBuf[128];  // Sprite attribute buffer (32 × 4 bytes)
 static u8  g_WaveSlotX[WAVE_PLAN_MAX];
 static u8  g_WaveSlotY[WAVE_PLAN_MAX];
 static u8  g_WaveSlotType[WAVE_PLAN_MAX];
@@ -414,83 +412,28 @@ static const u8 g_BossRed[32] = {
 // Bytes 24-31: rows 8-15 right half
 
 // White layer: complete outer ring (forms smooth circle)
+// MSX 16x16 sprite order: TL, BL, TR, BR (NO TL,TR,BL,BR!)
 static const u8 g_BossWhiteNew[32] = {
-    // Rows 0-7, left half (px 0-7)
-    0x00,  // Row 0: ........
-    0x0F,  // Row 1: ....1111
-    0x3F,  // Row 2: ..111111
-    0x7F,  // Row 3: .1111111
-    0xFF,  // Row 4: 11111111
-    0xFF,  // Row 5: 11111111
-    0xFF,  // Row 6: 11111111
-    0xFF,  // Row 7: 11111111
-    // Rows 0-7, right half (px 8-15)
-    0x00,  // Row 0: ........
-    0xF0,  // Row 1: 1111....
-    0xFC,  // Row 2: 111111..
-    0xFE,  // Row 3: 1111111.
-    0xFF,  // Row 4: 11111111
-    0xFF,  // Row 5: 11111111
-    0xFF,  // Row 6: 11111111
-    0xFF,  // Row 7: 11111111
-    // Rows 8-15, left half (px 0-7)
-    0xFF,  // Row 8:  11111111
-    0xFF,  // Row 9:  11111111
-    0xFF,  // Row 10: 11111111
-    0x7F,  // Row 11: .1111111
-    0x3F,  // Row 12: ..111111
-    0x1F,  // Row 13: ...11111
-    0x07,  // Row 14: .....111
-    0x00,  // Row 15: ........
-    // Rows 8-15, right half (px 8-15)
-    0xFF,  // Row 8:  11111111
-    0xFF,  // Row 9:  11111111
-    0xFF,  // Row 10: 11111111
-    0xFE,  // Row 11: 1111111.
-    0xFC,  // Row 12: 111111..
-    0xF8,  // Row 13: 11111...
-    0xE0,  // Row 14: 111.....
-    0x00   // Row 15: ........
+    // TL (rows 0-7, left half = px 0-7)
+    0x00, 0x0F, 0x3F, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF,
+    // BL (rows 8-15, left half = px 0-7)
+    0xFF, 0xFF, 0xFF, 0x7F, 0x3F, 0x1F, 0x07, 0x00,
+    // TR (rows 0-7, right half = px 8-15)
+    0x00, 0xF0, 0xFC, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF,
+    // BR (rows 8-15, right half = px 8-15)
+    0xFF, 0xFF, 0xFF, 0xFE, 0xFC, 0xF8, 0xE0, 0x00
 };
 
 // Red layer: core nucleus (concentrated center pixels for red color effect)
 static const u8 g_BossRedNew[32] = {
-    // Rows 0-7, left half (px 0-7)
-    0x00,  // Row 0: ........
-    0x00,  // Row 1: ........
-    0x06,  // Row 2: ....0110
-    0x0F,  // Row 3: ....1111
-    0x0F,  // Row 4: ....1111
-    0x3F,  // Row 5: ..111111
-    0x3F,  // Row 6: ..111111
-    0x3F,  // Row 7: ..111111
-    // Rows 0-7, right half (px 8-15)
-    0x00,  // Row 0: ........
-    0x00,  // Row 1: ........
-    0x60,  // Row 2: 0110....
-    0xF0,  // Row 3: 1111....
-    0xF0,  // Row 4: 1111....
-    0xFC,  // Row 5: 111111..
-    0xFC,  // Row 6: 111111..
-    0xFC,  // Row 7: 111111..
-    // Rows 8-15, left half (px 0-7)
-    0x3F,  // Row 8:  ..111111
-    0x3F,  // Row 9:  ..111111
-    0x3F,  // Row 10: ..111111
-    0x0F,  // Row 11: ....1111
-    0x06,  // Row 12: ....0110
-    0x03,  // Row 13: ......11
-    0x00,  // Row 14: ........
-    0x00,  // Row 15: ........
-    // Rows 8-15, right half (px 8-15)
-    0xFC,  // Row 8:  111111..
-    0xFC,  // Row 9:  111111..
-    0xFC,  // Row 10: 111111..
-    0xF0,  // Row 11: 1111....
-    0x60,  // Row 12: 0110....
-    0xC0,  // Row 13: 11......
-    0x00,  // Row 14: ........
-    0x00   // Row 15: ........
+    // TL (rows 0-7, left half = px 0-7)
+    0x00, 0x00, 0x06, 0x0F, 0x0F, 0x3F, 0x3F, 0x3F,
+    // BL (rows 8-15, left half = px 0-7)
+    0x3F, 0x3F, 0x3F, 0x0F, 0x06, 0x03, 0x00, 0x00,
+    // TR (rows 0-7, right half = px 8-15)
+    0x00, 0x00, 0x60, 0xF0, 0xF0, 0xFC, 0xFC, 0xFC,
+    // BR (rows 8-15, right half = px 8-15)
+    0xFC, 0xFC, 0xFC, 0xF0, 0x60, 0xC0, 0x00, 0x00
 };
 
 //=============================================================================
@@ -525,23 +468,22 @@ void InitWallTiles()
 
 void UpdateWallScroll()
 {
-    // Avança fase
     g_WallPhaseTimer++;
-    if (g_WallPhaseTimer < WALL_SPEED) return; // res a fer aquest frame
+    if (g_WallPhaseTimer < WALL_SPEED) return;
     g_WallPhaseTimer = 0;
     g_WallPhase = (g_WallPhase + 1) & 7;
 
-    // Quan canvia la fase, actualitza TOTES les files d'una vegada
-    // pero repartim: escrivim les 24 files en 2 passades de 12
-    // per no sobrecarregar el frame
-    u8 row, tile;
+    u8 row;
+    u16 base = g_ScreenLayoutLow;
     for (row = 0; row < 24; row++)
     {
-        tile = WALL_TILE_BASE + ((g_WallPhase + row) & 7);
-        VDP_Poke_GM2(0,  row, tile);
-        VDP_Poke_GM2(1,  row, tile);
-        VDP_Poke_GM2(20, row, tile);
-        VDP_Poke_GM2(21, row, tile);
+        u8 tile[2];
+        u16 addr = base + (u16)(row * 32);
+        tile[0] = WALL_TILE_BASE + ((g_WallPhase + row) & 7);
+        tile[1] = tile[0];
+        // Write cols 0-1 i 20-21 (2 bytes cada grup, un sol setup VRAM per grup)
+        VDP_WriteVRAM(tile, addr,      g_ScreenLayoutHigh, 2);
+        VDP_WriteVRAM(tile, addr + 20, g_ScreenLayoutHigh, 2);
     }
 }
 
@@ -605,8 +547,8 @@ void InitStars(TStar* s, u8 n, u8 base)
     u8 i;
     // Posicions pseudo-aleatòries pero ben distribuïdes
     // Usem una sequencia de Halton simplificada per evitar ordenacio
-    static const u8 xoff[11] = {11, 37, 63, 21, 51, 7, 41, 27, 57, 17, 47};
-    static const u8 yoff[11] = {17, 83, 43, 131, 67, 107, 23, 157, 53, 97, 173};
+    static const u8 xoff[16] = {11, 37, 63, 21, 51, 7, 41, 27, 57, 17, 47, 31, 3, 53, 13, 45};
+    static const u8 yoff[16] = {17, 83, 43, 131, 67, 107, 23, 157, 53, 97, 173, 61, 113, 79, 137, 149};
     u8 span = STAR_X1 - STAR_X0;
     for (i = 0; i < n; i++)
     {
@@ -650,7 +592,7 @@ void UpdateHUD()
     if (!g_HudDirty) return;
 
     // Score (rows 0-1)
-    HudDrawText(HUD_COL, 0, "SCORE", HUD_FONT_COLOR_HI);
+    HudDrawText(HUD_COL, 0, "SCORE", HUD_FONT_COLOR_NRM);
     {
         u16 s = g_Score;
         char buf[6];
@@ -1328,6 +1270,7 @@ void TickExplosions()
 void RespawnShip()
 {
     // 1:1 CPC: resetShipRuntimeState() + placeShipAtSpawn()
+    // NOTA: invulnerabilitat la posa UpdateShipExplosionState (despres de morir, no al comencar)
     g_ShipExploding  = 0;
     g_ShipExplTimer  = 0;
     g_ShipInvul      = 0;
@@ -1344,8 +1287,10 @@ void UpdateShipExplosionState()
     if (g_ShipExplTimer > 0) { g_ShipExplTimer--; return; }
     // CPC: game over check
     if (g_ShipLastLife) { g_ShipExploding = 0; return; } // game over, no respawn
-    // CPC: resetShipRuntimeState() + placeShipAtSpawn()
+    // CPC: resetShipRuntimeState() + placeShipAtSpawn() + setShipRespawnInvul()
     RespawnShip();
+    g_ShipInvul      = 1;
+    g_ShipInvulTimer = RESPAWN_INVUL_TICKS;
 }
 
 void UpdateShipInvulnerability()
@@ -1380,12 +1325,15 @@ void TriggerShipHit()
 }
 
 u8 RectOverlap(u8 x1, u8 y1, u8 w1, u8 h1, u8 x2, u8 y2, u8 w2, u8 h2){
-    if ((u16)x1 + w1 <= x2) return 0;
-    if ((u16)x2 + w2 <= x1) return 0;
-    if ((u16)y1 + h1 <= y2) return 0;
-    if ((u16)y2 + h2 <= y1) return 0;
+    if (x1 + w1 <= x2) return 0;
+    if (x2 + w2 <= x1) return 0;
+    if (y1 + h1 <= y2) return 0;
+    if (y2 + h2 <= y1) return 0;
     return 1;
 }
+// Macro inline (sense CALL/RET) per CheckCollisions
+#define OVERLAP(x1,y1,w1,h1,x2,y2,w2,h2) \
+    ((x1)+(w1)>(x2) && (x2)+(w2)>(x1) && (y1)+(h1)>(y2) && (y2)+(h2)>(y1))
 
 void CheckCollisions()
 {
@@ -1404,8 +1352,8 @@ void CheckCollisions()
             enemy_w = (g_Enemies[j].type == ENEMY_TYPE_BOSS) ? ENEMY_BOSS_W : ENEMY_W;
             enemy_h = (g_Enemies[j].type == ENEMY_TYPE_BOSS) ? ENEMY_BOSS_H : ENEMY_H;
             
-            if (RectOverlap(g_Shots[i].x, g_Shots[i].y, 4, 8,
-                            g_Enemies[j].x, g_Enemies[j].y, enemy_w, enemy_h))
+            if (OVERLAP(g_Shots[i].x, g_Shots[i].y, 4, 8,
+                        g_Enemies[j].x, g_Enemies[j].y, enemy_w, enemy_h))
             {
                 g_Shots[i].active   = 0;
                 g_Enemies[j].health--;
@@ -1447,8 +1395,8 @@ void CheckCollisions()
         enemy_w = (g_Enemies[j].type == ENEMY_TYPE_BOSS) ? ENEMY_BOSS_W : ENEMY_W;
         enemy_h = (g_Enemies[j].type == ENEMY_TYPE_BOSS) ? ENEMY_BOSS_H : ENEMY_H;
         
-        if (RectOverlap(g_ShipX, g_ShipY, SHIP_W, SHIP_H,
-                        g_Enemies[j].x, g_Enemies[j].y, enemy_w, enemy_h))
+        if (OVERLAP(g_ShipX, g_ShipY, SHIP_W, SHIP_H,
+                    g_Enemies[j].x, g_Enemies[j].y, enemy_w, enemy_h))
         {
             g_Enemies[j].active = 0;
             TriggerShipHit();
@@ -1460,8 +1408,8 @@ void CheckCollisions()
     for (j = 0; j < MAX_ENEMY_SHOTS; j++)
     {
         if (!g_EnemyShots[j].active) continue;
-        if (RectOverlap(g_ShipX, g_ShipY, SHIP_W, SHIP_H,
-                        g_EnemyShots[j].x, g_EnemyShots[j].y, 4, 8))
+        if (OVERLAP(g_ShipX, g_ShipY, SHIP_W, SHIP_H,
+                    g_EnemyShots[j].x, g_EnemyShots[j].y, 4, 8))
         {
             g_EnemyShots[j].active = 0;
             TriggerShipHit();
@@ -2260,6 +2208,7 @@ void EnterPostGame(u8 won)
 
 void ResetGameSession()
 {
+    u8 i;
     // 1:1 CPC: resetGameSession
     g_Score       = 0;
     g_Lives       = 3;
@@ -2269,7 +2218,10 @@ void ResetGameSession()
     g_ShipLastLife = 0;
     g_GameOverDelay = 0;
     InitEnemies();
+    // 1:1 CPC: initShots - neteja trets vells que poden surar de la partida anterior
+    for (i = 0; i < MAX_SHOTS; i++) g_Shots[i].active = 0;
     RespawnShip();
+    g_FireCooldown = 15;  // No disparar al començar (el foc ve premut del menu)
 }
 
 void InitGamePlay()
@@ -2402,10 +2354,10 @@ void main()
              UpdateWallScroll();
              switch (g_StarTimer1 & 3)
              {
-                 case 0: TickStars(g_S1, N1, 1, STAR_TILE_BASE_1); break;
-                 case 1: TickStars(g_S2, N2, 1, STAR_TILE_BASE_2); break;
-                 case 2: TickStars(g_S3, N3, 2, STAR_TILE_BASE_3); break;
-                 default: break;
+                 case 0: TickStars(g_S1, N1, 3, STAR_TILE_BASE_1); break;
+                 case 1: TickStars(g_S2, N2, 4, STAR_TILE_BASE_2); break;
+                 case 2: TickStars(g_S3, N3, 6, STAR_TILE_BASE_3); break;
+                 default: TickStars(g_S1, N1, 1, STAR_TILE_BASE_1); break;
              }
              g_StarTimer1++;
 
@@ -2496,20 +2448,31 @@ void main()
                  // Ship
                  if (!g_ShipExploding && (!g_ShipInvul || (g_ShipInvulTimer & 1)))
                  {
-                     VDP_SetSpriteSM1(spr++, g_ShipX, g_ShipY, 0, COLOR_WHITE);
-                     VDP_SetSpriteSM1(spr++, g_ShipX, g_ShipY, 4, COLOR_MEDIUM_RED);
+                     g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = 0;   g_SprBuf[spr*4+3] = COLOR_WHITE;       spr++;
+                     g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = 4;   g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED;  spr++;
                  }
-                 else { spr += 2; }
+                 else
+                 {
+                     // Nau invisible (blink o explosio): posa Y=208 (fora pantalla)
+                     g_SprBuf[spr*4+0] = VDP_SPRITE_DISABLE_SM1; spr++;
+                     g_SprBuf[spr*4+0] = VDP_SPRITE_DISABLE_SM1; spr++;
+                 }
 
                  // Player shots
                  for (i = 0; i < MAX_SHOTS; i++)
                      if (g_Shots[i].active)
-                         VDP_SetSpriteSM1(spr++, g_Shots[i].x, g_Shots[i].y, 8, COLOR_LIGHT_YELLOW);
+                     {
+                         g_SprBuf[spr*4+0] = g_Shots[i].y;  g_SprBuf[spr*4+1] = g_Shots[i].x;  g_SprBuf[spr*4+2] = 8;  g_SprBuf[spr*4+3] = COLOR_LIGHT_YELLOW;
+                         spr++;
+                     }
 
                  // Enemy shots
                  for (i = 0; i < MAX_ENEMY_SHOTS && spr < 18; i++)
                      if (g_EnemyShots[i].active)
-                         VDP_SetSpriteSM1(spr++, g_EnemyShots[i].x, g_EnemyShots[i].y, 12, COLOR_MEDIUM_RED);
+                     {
+                         g_SprBuf[spr*4+0] = g_EnemyShots[i].y;  g_SprBuf[spr*4+1] = g_EnemyShots[i].x;  g_SprBuf[spr*4+2] = 12;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED;
+                         spr++;
+                     }
 
                   // Enemies
                  {
@@ -2522,14 +2485,13 @@ void main()
                          
                          if (j == ENEMY_TYPE_BOSS)
                          {
-                             // Boss 16x16 rendered as 2 composite sprites (like ship)
-                             VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, 72, COLOR_WHITE);
-                             VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, 76, COLOR_MEDIUM_RED);
+                             g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = 72;  g_SprBuf[spr*4+3] = COLOR_WHITE;      spr++;
+                             g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = 76;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
                          }
                          else
                          {
-                             VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, etype_pat_w[j], COLOR_WHITE);
-                             VDP_SetSpriteSM1(spr++, g_Enemies[i].x, g_Enemies[i].y, etype_pat_r[j], COLOR_MEDIUM_RED);
+                             g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = etype_pat_w[j];  g_SprBuf[spr*4+3] = COLOR_WHITE;      spr++;
+                             g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = etype_pat_r[j];  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
                          }
                      }
                  }
@@ -2547,11 +2509,22 @@ void main()
                      { if (f > 3) f = 3; pat = exp_pat_e[f]; }
                      col = (f == 0) ? COLOR_WHITE :
                            (f == 1) ? COLOR_LIGHT_YELLOW : COLOR_MEDIUM_RED;
-                     VDP_SetSpriteSM1(spr++, g_Explosions[j].x, g_Explosions[j].y, pat, col);
+                     g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = col;
+                     spr++;
                  }
 
+                 // Desactiva sprites que sobren (Y=208 = off-screen)
                  while (spr < 32)
-                     VDP_SetSpritePositionY(spr++, VDP_SPRITE_DISABLE_SM1);
+                 {
+                     g_SprBuf[spr*4+0] = VDP_SPRITE_DISABLE_SM1;
+                     g_SprBuf[spr*4+1] = 0;
+                     g_SprBuf[spr*4+2] = 0;
+                     g_SprBuf[spr*4+3] = 0;
+                     spr++;
+                 }
+
+                 // Batch write all 32 sprites to VRAM en un sol cop
+                 VDP_WriteVRAM(g_SprBuf, g_SpriteAttributeLow, g_SpriteAttributeHigh, 128);
              }
              else
              {
