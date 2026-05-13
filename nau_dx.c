@@ -144,6 +144,9 @@
 #define HUD_FONT_COLOR_CYN  0x71  // Cyan (7) on Black
 #define HLINE_TILE         126   // Tile for cyan separator lines (NOT 167 - conflicts with HI font space!)
 
+// Helper: check if a redefinable key is pressed
+u8 IsKeyPressed(u8 key) { return IS_KEY_PRESSED(Keyboard_Read(key & 0x0F), key); }
+
 // Hi-scores
 #define HISCORE_COUNT    3
 
@@ -1435,35 +1438,90 @@ void HsInsert(u8 pos, u16 score, u8 level, u8* name)
 void HudDrawText(u8 col, u8 row, const char* s, u8 colorByte);
 void HudDrawHLine(u8 col, u8 row, u8 len, u8 colorByte);
 
-void DrawHiScoreTable()
+void DrawHiScoreTable(u8 inputPos)
 {
     u8 i;
     char buf[17];
     for (i = 0; i < HISCORE_COUNT; i++)
     {
+        u16 s = g_HiScores[i].score;
+        u8 lvl = g_HiScores[i].level;
         // Formatem: "1 XXXXX LVxx AAA" - 1:1 CPC hs_formatRow
         buf[0] = (char)('1' + i);
         buf[1] = ' ';
         {
-            u16 s = g_HiScores[i].score;
-            buf[6] = (char)('0' + s % 10); s /= 10;
-            buf[5] = (char)('0' + s % 10); s /= 10;
-            buf[4] = (char)('0' + s % 10); s /= 10;
-            buf[3] = (char)('0' + s % 10); s /= 10;
-            buf[2] = (char)('0' + s % 10);
+            u16 ss = (i == inputPos) ? g_LastScore : s;
+            buf[6] = (char)('0' + ss % 10); ss /= 10;
+            buf[5] = (char)('0' + ss % 10); ss /= 10;
+            buf[4] = (char)('0' + ss % 10); ss /= 10;
+            buf[3] = (char)('0' + ss % 10); ss /= 10;
+            buf[2] = (char)('0' + ss % 10);
         }
         buf[7]  = ' ';
         buf[8]  = 'L'; buf[9]  = 'V';
-        buf[10] = (char)('0' + g_HiScores[i].level / 10);
-        buf[11] = (char)('0' + g_HiScores[i].level % 10);
+        buf[10] = (char)('0' + ((i == inputPos) ? g_LastLevel : lvl) / 10);
+        buf[11] = (char)('0' + ((i == inputPos) ? g_LastLevel : lvl) % 10);
         buf[12] = ' ';
-        buf[13] = (char)g_HiScores[i].name[0];
-        buf[14] = (char)g_HiScores[i].name[1];
-        buf[15] = (char)g_HiScores[i].name[2];
+        if (i == inputPos)
+        {
+            buf[13] = (char)g_HsInputChar[0];
+            buf[14] = (char)g_HsInputChar[1];
+            buf[15] = (char)g_HsInputChar[2];
+        }
+        else
+        {
+            buf[13] = (char)g_HiScores[i].name[0];
+            buf[14] = (char)g_HiScores[i].name[1];
+            buf[15] = (char)g_HiScores[i].name[2];
+        }
         buf[16] = 0;
         // 1:1 CPC: rank 1 en "hi" (blanc), resta en normal (blau)
-        HudDrawText(4, (u8)(10 + i * 2), buf,
-                    i == 0 ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM);
+        u8 color = (i == 0) ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM;
+        HudDrawText(8, (u8)(10 + i * 2), buf, color);
+        // Si es la fila d'input, pinta el cursor en blanc sobre el color base
+        if (i == inputPos)
+        {
+            char c[2];
+            c[0] = (char)g_HsInputChar[g_HsInputPos]; c[1] = 0;
+            HudDrawText((u8)(8 + 13 + g_HsInputPos), (u8)(10 + i * 2), c, HUD_FONT_COLOR_HI);
+        }
+    }
+}
+
+// Redraw only the hi-score input row (fast update without full redraw)
+void RedrawHsInput()
+{
+    // Redibuixa la fila sencera on s'estan editant les inicials
+    char buf[17];
+    u8 i;
+    for (i = 0; i < HISCORE_COUNT; i++)
+    {
+        if (i == g_HsPos)
+        {
+            u16 ss = g_LastScore;
+            buf[0] = (char)('1' + i);
+            buf[1] = ' ';
+            buf[6] = (char)('0' + ss % 10); ss /= 10;
+            buf[5] = (char)('0' + ss % 10); ss /= 10;
+            buf[4] = (char)('0' + ss % 10); ss /= 10;
+            buf[3] = (char)('0' + ss % 10); ss /= 10;
+            buf[2] = (char)('0' + ss % 10);
+            buf[7]  = ' ';
+            buf[8]  = 'L'; buf[9]  = 'V';
+            buf[10] = (char)('0' + g_LastLevel / 10);
+            buf[11] = (char)('0' + g_LastLevel % 10);
+            buf[12] = ' ';
+            buf[13] = (char)g_HsInputChar[0];
+            buf[14] = (char)g_HsInputChar[1];
+            buf[15] = (char)g_HsInputChar[2];
+            buf[16] = 0;
+            u8 color = (i == 0) ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM;
+            HudDrawText(8, (u8)(10 + i * 2), buf, color);
+            // Cursor
+            char c[2];
+            c[0] = (char)g_HsInputChar[g_HsInputPos]; c[1] = 0;
+            HudDrawText((u8)(8 + 13 + g_HsInputPos), (u8)(10 + i * 2), c, HUD_FONT_COLOR_HI);
+        }
     }
 }
 
@@ -1695,8 +1753,8 @@ static const u8 g_HudFontTiles[37*8] = {
     0xC3,0xC3,0xF3,0xCF,0xC3,0xC3,0xC3,0x00, // N
     0x3C,0xC3,0xC3,0xC3,0xC3,0xC3,0x3C,0x00, // O
     0xFC,0xC3,0xC3,0xFC,0xC0,0xC0,0xC0,0x00, // P
-    0x3C,0xC3,0xC3,0xC3,0xCF,0x33,0x0F,0x00, // Q
-    0xFC,0xC3,0xC3,0xFC,0xCC,0xC3,0xC3,0x00, // R
+     0x3C,0xC3,0xC3,0xC3,0xCF,0x33,0x0F,0x00, // Q
+     0xFC,0xC3,0xC3,0xFC,0xCC,0xC3,0xC3,0x00, // R
     0x3C,0xC3,0xC0,0x3C,0x03,0xC3,0x3C,0x00, // S
     0xFF,0x30,0x30,0x30,0x30,0x30,0x30,0x00, // T
     0xC3,0xC3,0xC3,0xC3,0xC3,0xC3,0x3C,0x00, // U
@@ -1864,6 +1922,17 @@ void UpdateMenuInput()
     else if (g_TitleMode == TS_HISCORE_INPUT)
     {
         static u8 key_cd = 0;
+
+        // Phase 0 = entering (full draw queued by EnterPostGame)
+        // Phase 1 = full draw done, wait for fire release
+        // Phase 2 = fire released, allow input
+        if (g_TitlePhase == 1)
+        {
+            if (!fire) g_TitlePhase = 2;
+            return;
+        }
+        if (g_TitlePhase < 2) return;
+
         if (key_cd > 0) { key_cd--; return; }
 
         if (IS_KEY_PRESSED(row8, KEY_UP))
@@ -1901,10 +1970,9 @@ void UpdateMenuInput()
     else if (g_TitleMode == TS_REDEFINE)
     {
         // 1:1 CPC: detecta qualsevol tecla premuda i l'assigna
-        // Llegim totes les files del teclat per detectar la primera tecla
-        static u8 redef_phase = 0;
         u8 detected = 0;
         u8 fr;
+        // Use g_TitlePhase to track redefinition state (reset to 0 when entering)
         for (fr = 0; fr < 9 && !detected; fr++)
         {
             u8 row = Keyboard_Read(fr);
@@ -1919,11 +1987,11 @@ void UpdateMenuInput()
             }
         }
 
-        if (redef_phase == 0)
+        if (g_TitlePhase == 0)
         {
-            if (!detected) redef_phase = 1; // espera que no hi hagi cap tecla
+            if (!detected) g_TitlePhase = 1; // espera que no hi hagi cap tecla
         }
-        else if (redef_phase == 1 && detected)
+        else if (g_TitlePhase == 1 && detected)
         {
             // Assigna la tecla al pas actual
             switch (g_RedefineStep)
@@ -1936,7 +2004,7 @@ void UpdateMenuInput()
                 default: break;
             }
             g_RedefineStep++;
-            redef_phase = 0;
+            g_TitlePhase = 0;
             if (g_RedefineStep >= 5)
             {
                 g_TitleMode = TS_MENU;
@@ -1947,38 +2015,19 @@ void UpdateMenuInput()
      }
  }
 
-// Redraw only the hi-score input initials (fast update without full redraw)
-void RedrawHsInput()
-{
-     u8 k;
-     char c[2];
-     // Clear the input line first (row 20, columns 14-18)
-     for (k = 0; k < 3; k++)
-     {
-         HudDrawText((u8)(14 + k * 2), 20, " ", HUD_FONT_COLOR_NRM);
-     }
-     // Redraw the 3 initials
-     for (k = 0; k < 3; k++)
-     {
-         c[0] = (char)g_HsInputChar[k]; c[1] = 0;
-         HudDrawText((u8)(14 + k * 2), 20, c,
-                     k == g_HsInputPos ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM);
-     }
-}
-
-void DrawMenuScreen()
+ void DrawMenuScreen()
 {
     u8 k, i;
     VDP_FillScreen_GM2(0);
     InitLogoTiles();
     InitHudFontTiles();
-    InitMenuStarTiles();
-    InitMenuStars();
 
     // 1:1 CPC: estrelles centrals NOMÉS per TOP3 (zona superior buida sense logo)
-    // HISCORE_INPUT i HISCORE_VIEW no tenen estrelles laterals (corrompen text)
+    // HISCORE_INPUT i HISCORE_VIEW: no estrelles (corrompen text i sobreescriuen font A,B,C)
     if (g_TitleMode != TS_HISCORE_INPUT && g_TitleMode != TS_HISCORE_VIEW)
     {
+        InitMenuStarTiles();
+        InitMenuStars();
         g_MenuUseCenter = (g_TitleMode == TS_ATTRACT_SCORE) ? 1 : 0;
 
         // Dibuixa estrelles inicials
@@ -2007,9 +2056,9 @@ void DrawMenuScreen()
     {
         DrawLogo();
         HudDrawHLine(0, 4, 32, HUD_FONT_COLOR_CYN);
-        HudDrawText(10, 6, "1 JOYSTICK", HUD_FONT_COLOR_NRM);
-        HudDrawText(10, 8, "2 KEYBOARD", HUD_FONT_COLOR_NRM);
-        HudDrawText(10,10, "3 SET KEYS", HUD_FONT_COLOR_NRM);
+        HudDrawText(11, 6, "1 JOYSTICK", HUD_FONT_COLOR_NRM);
+        HudDrawText(11, 8, "2 KEYBOARD", HUD_FONT_COLOR_NRM);
+        HudDrawText(11,10, "3 SET KEYS", HUD_FONT_COLOR_NRM);
         HudDrawHLine(0, 12, 32, HUD_FONT_COLOR_CYN);
         HudDrawText(9, 15, "FIRE TO START", HUD_FONT_COLOR_HI);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
@@ -2020,7 +2069,7 @@ void DrawMenuScreen()
         // 1:1 CPC: top 3 SENSE logo, amb estrelles centrals
         HudDrawText(13, 8, "TOP  3", HUD_FONT_COLOR_HI);
         HudDrawHLine(0,  9, 32, HUD_FONT_COLOR_CYN);
-        DrawHiScoreTable();
+        DrawHiScoreTable(0xFF);
         HudDrawHLine(0, 16, 32, HUD_FONT_COLOR_CYN);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
@@ -2030,7 +2079,7 @@ void DrawMenuScreen()
         HudDrawText(11, 6, "GAME OVER", HUD_FONT_COLOR_HI);
         HudDrawText(13, 8, "TOP 3",     HUD_FONT_COLOR_HI);
         HudDrawHLine(0,  9, 32, HUD_FONT_COLOR_CYN);
-        DrawHiScoreTable();
+        DrawHiScoreTable(0xFF);
         HudDrawHLine(0, 16, 32, HUD_FONT_COLOR_CYN);
         HudDrawText(9, 18, "PRESS ANY KEY", HUD_FONT_COLOR_HI);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
@@ -2040,14 +2089,14 @@ void DrawMenuScreen()
     {
         HudDrawText(10, 3, "HOW TO PLAY", HUD_FONT_COLOR_HI);
         HudDrawHLine(0,  4, 32, HUD_FONT_COLOR_CYN);
-        HudDrawText(0, 5,  "JOY OR ARROWS TO MOVE",    HUD_FONT_COLOR_NRM);
-        HudDrawText(1, 7,  "Z OR FIRE 1 TO SHOOT",     HUD_FONT_COLOR_NRM);
-        HudDrawText(6, 9,  "P TO PAUSE",                HUD_FONT_COLOR_NRM);
-        HudDrawText(1,11,  "Q OR RETURN TO QUIT",       HUD_FONT_COLOR_NRM);
-        HudDrawText(0,13,  "EXTRA LIFE EVERY 5000 PTS", HUD_FONT_COLOR_NRM);
-        HudDrawText(1,15,  "COMPLETE WAVE FOR BONUS",   HUD_FONT_COLOR_NRM);
+        HudDrawText(5, 5,  "JOY OR ARROWS TO MOVE",    HUD_FONT_COLOR_NRM);
+        HudDrawText(6, 7,  "Z OR FIRE 1 TO SHOOT",     HUD_FONT_COLOR_NRM);
+        HudDrawText(11, 9,  "P TO PAUSE",               HUD_FONT_COLOR_NRM);
+        HudDrawText(6,11,  "Q OR RETURN TO QUIT",       HUD_FONT_COLOR_NRM);
+        HudDrawText(3,13,  "EXTRA LIFE EVERY 5000 PTS", HUD_FONT_COLOR_NRM);
+        HudDrawText(4,15,  "COMPLETE WAVE FOR BONUS",   HUD_FONT_COLOR_NRM);
         HudDrawHLine(0, 17, 32, HUD_FONT_COLOR_CYN);
-        HudDrawText(9, 19, "FIRE TO MENU", HUD_FONT_COLOR_HI);
+        HudDrawText(10, 19, "FIRE TO MENU", HUD_FONT_COLOR_HI);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
     }
@@ -2065,20 +2114,12 @@ void DrawMenuScreen()
     }
     else if (g_TitleMode == TS_HISCORE_INPUT)
     {
-        // 1:1 CPC: GAME OVER + TOP3 + taula + entrada nom
+        // 1:1 CPC: GAME OVER + TOP3 + taula amb input directe
         HudDrawText(11, 4, "GAME OVER", HUD_FONT_COLOR_HI);
         HudDrawText(13, 6, "TOP 3",     HUD_FONT_COLOR_HI);
         HudDrawHLine(0,  7, 32, HUD_FONT_COLOR_CYN);
-        DrawHiScoreTable();
+        DrawHiScoreTable(g_HsPos);  // Edita directament a la fila corresponent
         HudDrawHLine(0, 16, 32, HUD_FONT_COLOR_CYN);
-        HudDrawText(5, 18, "ENTER YOUR NAME", HUD_FONT_COLOR_NRM);
-        for (k = 0; k < 3; k++)
-        {
-            char c[2];
-            c[0] = (char)g_HsInputChar[k]; c[1] = 0;
-            HudDrawText((u8)(14 + k * 2), 20, c,
-                        k == g_HsInputPos ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM);
-        }
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
     }
@@ -2116,9 +2157,9 @@ void EnterPostGame(u8 won)
         if (g_Score > 0 && g_HsPos < HISCORE_COUNT)
         {
              g_HsInputPos    = 0;
-             g_HsInputChar[0] = 'A';
-             g_HsInputChar[1] = 'A';
-             g_HsInputChar[2] = 'A';
+             g_HsInputChar[0] = ' ';
+             g_HsInputChar[1] = ' ';
+             g_HsInputChar[2] = ' ';
              g_TitleMode = TS_HISCORE_INPUT;
              g_TitleDirty = 1;
          }
@@ -2234,25 +2275,24 @@ void main()
              if (g_TitleMode != TS_HISCORE_INPUT && g_TitleMode != TS_HISCORE_VIEW)
                  TickMenuStars(); // Stars corrupt text in gameover screens
 
-             if (g_TitleDirty)
-             {
-                 if (g_TitleMode == TS_HISCORE_INPUT && g_TitlePhase > 0)
-                 {
-                     // Optimized: only redraw the input line, not the whole screen
-                     // (but only after the first frame)
-                     RedrawHsInput();
-                 }
-                 else
-                 {
-                     // Full redraw for other screens or first frame of input
-                     DrawMenuScreen();
-                     if (g_TitleMode == TS_HISCORE_INPUT)
-                         g_TitlePhase = 1;  // Mark that we've drawn the full screen once
-                 }
-                 g_TitleDirty = 0;
-             }
+              if (g_TitleDirty)
+              {
+                  if (g_TitleMode == TS_HISCORE_INPUT && g_TitlePhase > 1)
+                  {
+                      // Optimized: only redraw the input line, not the whole screen
+                      RedrawHsInput();
+                  }
+                  else
+                  {
+                      // Full redraw for other screens or first frame of input
+                      DrawMenuScreen();
+                      if (g_TitleMode == TS_HISCORE_INPUT && g_TitlePhase == 0)
+                          g_TitlePhase = 1;  // Full draw done, mark ready for fire wait
+                  }
+                   g_TitleDirty = 0;
+               }
 
-            // Transicio a joc
+             // Transicio a joc
             if (g_GameState == GS_PLAYING)
             {
                 InitGamePlay();
@@ -2284,14 +2324,14 @@ void main()
              if (!g_PausedFlag)
              {
                  // Input
-                 if (!g_ShipExploding)
-                 {
-                     if (IS_KEY_PRESSED(row8, KEY_LEFT)  && g_ShipX > SHIP_MIN_X) g_ShipX -= g_ShipSpeedX;
-                     if (IS_KEY_PRESSED(row8, KEY_RIGHT) && g_ShipX < SHIP_MAX_X) g_ShipX += g_ShipSpeedX;
-                     if (IS_KEY_PRESSED(row8, KEY_UP)    && g_ShipY > SHIP_MIN_Y) g_ShipY -= g_ShipSpeedY;
-                     if (IS_KEY_PRESSED(row8, KEY_DOWN)  && g_ShipY < SHIP_MAX_Y) g_ShipY += g_ShipSpeedY;
+                  if (!g_ShipExploding)
+                  {
+                      if (IsKeyPressed(g_KeyLeft)  && g_ShipX > SHIP_MIN_X) g_ShipX -= g_ShipSpeedX;
+                      if (IsKeyPressed(g_KeyRight) && g_ShipX < SHIP_MAX_X) g_ShipX += g_ShipSpeedX;
+                      if (IsKeyPressed(g_KeyUp)    && g_ShipY > SHIP_MIN_Y) g_ShipY -= g_ShipSpeedY;
+                      if (IsKeyPressed(g_KeyDown)  && g_ShipY < SHIP_MAX_Y) g_ShipY += g_ShipSpeedY;
 
-                     if ((IS_KEY_PRESSED(row8, KEY_SPACE) || IS_KEY_PRESSED(row5, KEY_Z)) && g_FireCooldown == 0)
+                      if ((IsKeyPressed(g_KeyFire) || IS_KEY_PRESSED(row8, KEY_SPACE)) && g_FireCooldown == 0)
                      {
                          for (i = 0; i < MAX_SHOTS; i++)
                          {
@@ -2344,11 +2384,12 @@ void main()
                 }
             }
 
-            // Victoria (nivell final completat)
-            if (g_Level > ENDGAME_FINAL_LEVEL)
-                EnterPostGame(1);
+             // Victoria (nivell final completat)
+             if (g_Level > ENDGAME_FINAL_LEVEL)
+                 EnterPostGame(1);
 
-             UpdateHUD();
+             if (g_GameState == GS_PLAYING)
+                 UpdateHUD();
 
              // Draw sprites (but not during game over delay)
              if (g_GameOverDelay == 0)
