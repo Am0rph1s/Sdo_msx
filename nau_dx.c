@@ -1246,6 +1246,7 @@ void UpdateEnemies()
             else 
             { 
                 SpawnBossShots(g_Enemies[i].x, g_Enemies[i].y, g_BossTierTable[tier].num_bullets);
+                sfxEnemyShot();
                 g_Enemies[i].fire_cd = g_BossTierTable[tier].fire_cd; 
             }
         }
@@ -1270,7 +1271,7 @@ void UpdateEnemies()
             }
 
             if (g_Enemies[i].fire_cd > 0) g_Enemies[i].fire_cd--;
-            else { SpawnEnemyShot(g_Enemies[i].x, g_Enemies[i].y); g_Enemies[i].fire_cd = ENEMYSHOT_COOLDOWN; }
+            else { SpawnEnemyShot(g_Enemies[i].x, g_Enemies[i].y); sfxEnemyShot(); g_Enemies[i].fire_cd = ENEMYSHOT_COOLDOWN; }
         }
 
         if (g_Enemies[i].y >= SCREEN_H) { g_Enemies[i].active = 0; continue; }
@@ -1309,138 +1310,144 @@ static u8 sfxB_kind = SFX_NONE, sfxB_frame = 0;
 static u8 sfxC_kind = SFX_NONE, sfxC_frame = 0;
 
 static void setToneA(u8 lo, u8 hi, u8 vol) {
-    PSG_SetRegister(0, lo); PSG_SetRegister(1, hi); PSG_SetRegister(8, vol);
+    PSG_SetTone(PSG_CHANNEL_A, (u16)(hi * 256u + lo));
+    PSG_SetVolume(PSG_CHANNEL_A, vol);
 }
 static void setToneB(u8 lo, u8 hi, u8 vol) {
-    PSG_SetRegister(2, lo); PSG_SetRegister(3, hi); PSG_SetRegister(9, vol);
+    PSG_SetTone(PSG_CHANNEL_B, (u16)(hi * 256u + lo));
+    PSG_SetVolume(PSG_CHANNEL_B, vol);
 }
 static void setToneC(u8 lo, u8 hi, u8 vol) {
-    PSG_SetRegister(4, lo); PSG_SetRegister(5, hi); PSG_SetRegister(10, vol);
+    PSG_SetTone(PSG_CHANNEL_C, (u16)(hi * 256u + lo));
+    PSG_SetVolume(PSG_CHANNEL_C, vol);
 }
 
 static void updateMixer(void) {
-    u8 mixer = 0x3F;
-    if (sfxA_kind == SFX_GAMEOVER || sfxB_kind == SFX_GAMEOVER || sfxC_kind == SFX_GAMEOVER) {
-        mixer &= (u8)~0x01; mixer &= (u8)~0x02; mixer &= (u8)~0x04;
-    } else if (sfxA_kind == SFX_LEVELUP) {
-        mixer &= (u8)~0x01;
-    } else if (sfxA_kind == SFX_BEEP || sfxB_kind == SFX_BEEP) {
-        mixer &= (u8)~0x01; mixer &= (u8)~0x02;
+    // Enable tone channels based on active effects
+    PSG_EnableTone(PSG_CHANNEL_A, sfxA_kind != SFX_NONE);
+    PSG_EnableNoise(PSG_CHANNEL_A, FALSE);
+    
+    if (sfxB_kind == SFX_EXP_ENEMY) {
+        PSG_EnableTone(PSG_CHANNEL_B, FALSE);
+        PSG_EnableNoise(PSG_CHANNEL_B, TRUE);
+    } else if (sfxB_kind == SFX_EXP_SHIP) {
+        PSG_EnableTone(PSG_CHANNEL_B, TRUE);
+        PSG_EnableNoise(PSG_CHANNEL_B, TRUE);
+    } else if (sfxB_kind != SFX_NONE) {
+        PSG_EnableTone(PSG_CHANNEL_B, TRUE);
+        PSG_EnableNoise(PSG_CHANNEL_B, FALSE);
     } else {
-        if (sfxA_kind != SFX_NONE) mixer &= (u8)~0x01;
-        if (sfxB_kind == SFX_EXP_ENEMY) mixer &= (u8)~0x10;
-        else if (sfxB_kind == SFX_EXP_SHIP) { mixer &= (u8)~0x02; mixer &= (u8)~0x10; }
-        else if (sfxB_kind != SFX_NONE) mixer &= (u8)~0x02;
-        if (sfxC_kind == SFX_SHOT) mixer &= (u8)~0x04;
+        PSG_EnableTone(PSG_CHANNEL_B, FALSE);
+        PSG_EnableNoise(PSG_CHANNEL_B, FALSE);
     }
-    PSG_SetRegister(7, mixer);
+    
+    PSG_EnableTone(PSG_CHANNEL_C, sfxC_kind == SFX_SHOT || sfxC_kind == SFX_GAMEOVER);
+    PSG_EnableNoise(PSG_CHANNEL_C, FALSE);
 }
 
 void soundStopAll(void) {
     sfxA_kind = SFX_NONE; sfxA_frame = 0;
     sfxB_kind = SFX_NONE; sfxB_frame = 0;
     sfxC_kind = SFX_NONE; sfxC_frame = 0;
-    PSG_SetRegister(7, 0x3F);
-    PSG_SetRegister(8, 0); PSG_SetRegister(9, 0); PSG_SetRegister(10, 0);
-    PSG_SetRegister(0, 0); PSG_SetRegister(1, 0);
-    PSG_SetRegister(2, 0); PSG_SetRegister(3, 0);
-    PSG_SetRegister(4, 0); PSG_SetRegister(5, 0);
-    PSG_SetRegister(6, 0x1F);
+    PSG_Mute();
 }
 
 void soundInit(void) { soundStopAll(); }
-void sfxShot(void) { sfxC_kind = SFX_SHOT; sfxC_frame = 0; }
-void sfxEnemyExplosion(void) { sfxB_kind = SFX_EXP_ENEMY; sfxB_frame = 0; }
-void sfxShipExplosion(void) { sfxB_kind = SFX_EXP_SHIP; sfxB_frame = 0; }
-void sfxBeep(void) { sfxA_kind = SFX_BEEP; sfxA_frame = 0; sfxB_kind = SFX_BEEP; sfxB_frame = 0; }
-void sfxGameOver(void) { sfxA_kind = SFX_GAMEOVER; sfxA_frame = 0; sfxB_kind = SFX_GAMEOVER; sfxB_frame = 0; }
-void sfxLevelUp(void) { sfxA_kind = SFX_LEVELUP; sfxA_frame = 0; }
+void sfxShot(void) { sfxC_kind = SFX_SHOT; sfxC_frame = 0; setToneC(30, 1, 9); PSG_EnableTone(PSG_CHANNEL_C, TRUE); PSG_EnableNoise(PSG_CHANNEL_C, FALSE); }
+void sfxEnemyExplosion(void) { sfxB_kind = SFX_EXP_ENEMY; sfxB_frame = 0; PSG_SetRegister(6, 0x04); PSG_SetVolume(PSG_CHANNEL_B, 13); PSG_EnableTone(PSG_CHANNEL_B, FALSE); PSG_EnableNoise(PSG_CHANNEL_B, TRUE); }
+void sfxShipExplosion(void) { sfxB_kind = SFX_EXP_SHIP; sfxB_frame = 0; setToneB(138, 1, 15); PSG_SetRegister(6, 0x04); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, TRUE); }
+void sfxBeep(void) { sfxA_kind = SFX_BEEP; sfxA_frame = 0; sfxB_kind = SFX_BEEP; sfxB_frame = 0; setToneA(172, 1, 15); setToneB(84, 1, 12); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, FALSE); }
+void sfxGameOver(void) { sfxA_kind = SFX_GAMEOVER; sfxA_frame = 0; sfxB_kind = SFX_GAMEOVER; sfxB_frame = 0; sfxC_kind = SFX_GAMEOVER; sfxC_frame = 0; setToneA(252, 1, 12); setToneB(172, 1, 12); setToneC(84, 1, 12); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, FALSE); PSG_EnableTone(PSG_CHANNEL_C, TRUE); PSG_EnableNoise(PSG_CHANNEL_C, FALSE); }
+void sfxLevelUp(void) { sfxA_kind = SFX_LEVELUP; sfxA_frame = 0; setToneA(172, 1, 14); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); }
+void sfxEnemyShot(void) { sfxB_kind = SFX_EXP_ENEMY; sfxB_frame = 3; PSG_SetRegister(6, 0x10); PSG_SetVolume(PSG_CHANNEL_B, 8); PSG_EnableTone(PSG_CHANNEL_B, FALSE); PSG_EnableNoise(PSG_CHANNEL_B, TRUE); }
+void sfxMenuSelect(void) { sfxA_kind = SFX_LEVELUP; sfxA_frame = 0; setToneA(172, 1, 15); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); }
 
 static void tickChannelA(void) {
     if (sfxA_kind == SFX_BEEP) {
-        if (sfxA_frame < 2)           setToneA(239, 0, 15);
-        else if (sfxA_frame == 2)     PSG_SetRegister(8, 0);
-        else if (sfxA_frame < 5)      setToneA(190, 0, 15);
-        else { sfxA_kind = SFX_NONE; sfxA_frame = 0; PSG_SetRegister(8, 0); return; }
+        if (sfxA_frame < 2)           setToneA(172, 1, 15);
+        else if (sfxA_frame == 2)     PSG_SetVolume(PSG_CHANNEL_A, 0);
+        else if (sfxA_frame < 5)      setToneA( 84, 1, 15);
+        else { sfxA_kind = SFX_NONE; sfxA_frame = 0; PSG_SetVolume(PSG_CHANNEL_A, 0); return; }
         ++sfxA_frame; return;
     }
     if (sfxA_kind == SFX_LEVELUP) {
-        if      (sfxA_frame < 2)  setToneA(239, 0, 14);
-        else if (sfxA_frame < 4)  setToneA(190, 0, 14);
-        else if (sfxA_frame < 6)  setToneA(160, 0, 13);
-        else if (sfxA_frame < 8)  setToneA(119, 0, 15);
-        else if (sfxA_frame < 11) setToneA(119, 0, 7);
-        else { sfxA_kind = SFX_NONE; sfxA_frame = 0; PSG_SetRegister(8, 0); return; }
+        if      (sfxA_frame < 2)  setToneA(172, 1, 14);
+        else if (sfxA_frame < 4)  setToneA( 84, 1, 14);
+        else if (sfxA_frame < 6)  setToneA( 30, 1, 13);
+        else if (sfxA_frame < 8)  setToneA(213, 0, 15);
+        else if (sfxA_frame < 11) setToneA(213, 0,  7);
+        else { sfxA_kind = SFX_NONE; sfxA_frame = 0; PSG_SetVolume(PSG_CHANNEL_A, 0); return; }
         ++sfxA_frame; return;
     }
     if (sfxA_kind == SFX_GAMEOVER) {
-        if (sfxA_frame < 24) { setToneA(28, 1, 12); }
-        else { sfxA_kind = SFX_NONE; sfxA_frame = 0; PSG_SetRegister(8, 0); return; }
+        if (sfxA_frame < 60) { setToneA(252, 1, 12); }
+        else { sfxA_kind = SFX_NONE; sfxA_frame = 0; PSG_SetVolume(PSG_CHANNEL_A, 0); return; }
         ++sfxA_frame; return;
     }
-    PSG_SetRegister(8, 0);
+    PSG_SetVolume(PSG_CHANNEL_A, 0);
 }
 static void tickChannelB(void) {
     if (sfxB_kind == SFX_EXP_ENEMY) {
         switch (sfxB_frame) {
-            case 0: PSG_SetRegister(6, 0x04); PSG_SetRegister(9, 13); break;
-            case 1: PSG_SetRegister(6, 0x07); PSG_SetRegister(9, 11); break;
-            case 2: PSG_SetRegister(6, 0x0B); PSG_SetRegister(9,  9); break;
-            case 3: PSG_SetRegister(6, 0x10); PSG_SetRegister(9,  6); break;
-            case 4: PSG_SetRegister(6, 0x16); PSG_SetRegister(9,  3); break;
-            default: sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetRegister(9, 0); return;
+            case 0: PSG_SetRegister(6, 0x04); PSG_SetVolume(PSG_CHANNEL_B, 13); break;
+            case 1: PSG_SetRegister(6, 0x07); PSG_SetVolume(PSG_CHANNEL_B, 11); break;
+            case 2: PSG_SetRegister(6, 0x0B); PSG_SetVolume(PSG_CHANNEL_B,  9); break;
+            case 3: PSG_SetRegister(6, 0x10); PSG_SetVolume(PSG_CHANNEL_B,  6); break;
+            case 4: PSG_SetRegister(6, 0x16); PSG_SetVolume(PSG_CHANNEL_B,  3); break;
+            default: sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetVolume(PSG_CHANNEL_B, 0); return;
         }
         ++sfxB_frame; return;
     }
     if (sfxB_kind == SFX_EXP_SHIP) {
         switch (sfxB_frame) {
-            case 0: setToneB(220, 0, 15); PSG_SetRegister(6, 0x04); break;
-            case 1: setToneB(180, 0, 14); PSG_SetRegister(6, 0x06); break;
-            case 2: setToneB(150, 0, 12); PSG_SetRegister(6, 0x08); break;
-            case 3: setToneB(120, 0, 10); PSG_SetRegister(6, 0x0C); break;
-            case 4: setToneB( 90, 0,  8); PSG_SetRegister(6, 0x12); break;
-            case 5: setToneB( 70, 0,  6); PSG_SetRegister(6, 0x16); break;
-            case 6: setToneB( 50, 0,  4); PSG_SetRegister(6, 0x1B); break;
-            default: sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetRegister(9, 0); return;
+            case 0: setToneB(138, 1, 15); PSG_SetRegister(6, 0x04); break;
+            case 1: setToneB( 66, 1, 14); PSG_SetRegister(6, 0x06); break;
+            case 2: setToneB( 13, 1, 12); PSG_SetRegister(6, 0x08); break;
+            case 3: setToneB(215, 0, 10); PSG_SetRegister(6, 0x0C); break;
+            case 4: setToneB(161, 0,  8); PSG_SetRegister(6, 0x12); break;
+            case 5: setToneB(125, 0,  6); PSG_SetRegister(6, 0x16); break;
+            case 6: setToneB( 90, 0,  4); PSG_SetRegister(6, 0x1B); break;
+            default: sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetVolume(PSG_CHANNEL_B, 0); return;
         }
         ++sfxB_frame; return;
     }
     if (sfxB_kind == SFX_BEEP) {
-        if (sfxB_frame < 2)           setToneB(190, 0, 12);
-        else if (sfxB_frame == 2)     PSG_SetRegister(9, 0);
-        else if (sfxB_frame < 5)      setToneB(159, 0, 12);
-        else { sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetRegister(9, 0); return; }
+        if (sfxB_frame < 2)           setToneB( 84, 1, 12);
+        else if (sfxB_frame == 2)     PSG_SetVolume(PSG_CHANNEL_B, 0);
+        else if (sfxB_frame < 5)      setToneB( 29, 1, 12);
+        else { sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetVolume(PSG_CHANNEL_B, 0); return; }
         ++sfxB_frame; return;
     }
     if (sfxB_kind == SFX_GAMEOVER) {
-        if (sfxB_frame < 24) { setToneB(239, 0, 12); }
-        else { sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetRegister(9, 0); return; }
+        if (sfxB_frame < 60) { setToneB(172, 1, 12); }
+        else { sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetVolume(PSG_CHANNEL_B, 0); return; }
         ++sfxB_frame; return;
     }
-    PSG_SetRegister(9, 0);
+    PSG_SetVolume(PSG_CHANNEL_B, 0);
 }
 static void tickChannelC(void) {
     if (sfxC_kind == SFX_SHOT) {
-        if (sfxC_frame == 0)          setToneC(160, 0, 9);
-        else if (sfxC_frame == 1)     setToneC(112, 0, 4);
-        else { sfxC_kind = SFX_NONE; sfxC_frame = 0; PSG_SetRegister(10, 0); return; }
+        if (sfxC_frame == 0)          setToneC( 30, 1, 9);
+        else if (sfxC_frame == 1)     setToneC(200, 0, 4);
+        else { sfxC_kind = SFX_NONE; sfxC_frame = 0; PSG_SetVolume(PSG_CHANNEL_C, 0); return; }
         ++sfxC_frame; return;
     }
     if (sfxC_kind == SFX_GAMEOVER) {
-        if (sfxC_frame < 24) { setToneC(190, 0, 12); }
-        else { sfxC_kind = SFX_NONE; sfxC_frame = 0; PSG_SetRegister(10, 0); return; }
+        if (sfxC_frame < 60) { setToneC(84, 1, 12); }
+        else { sfxC_kind = SFX_NONE; sfxC_frame = 0; PSG_SetVolume(PSG_CHANNEL_C, 0); return; }
         ++sfxC_frame; return;
     }
-    PSG_SetRegister(10, 0);
+    PSG_SetVolume(PSG_CHANNEL_C, 0);
 }
 void soundTick(void) {
     tickChannelA();
     tickChannelB();
     tickChannelC();
     updateMixer();
-    PSG_Apply();
 }
 
+//=============================================================================
+// COLLISIONS + SHIP HIT
 //=============================================================================
 // COLLISIONS + SHIP HIT
 //=============================================================================
@@ -2112,6 +2119,7 @@ void UpdateMenuInput()
         else if (fire)
         {
             g_GameState  = GS_PLAYING;
+            sfxMenuSelect();
         }
 
         // Blink "FIRE TO START" - 1:1 CPC
@@ -2382,6 +2390,8 @@ void UpdateMenuInput()
 void EnterPostGame(u8 won)
 {
     u8 s;
+    // Atura TOTS els sons abans d'entrar al menu (evita notes perpetuades)
+    soundStopAll();
     // Desactiva TOTS els sprites abans d'entrar al menu
     for (s = 0; s < 32; s++)
         VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
@@ -2595,15 +2605,14 @@ void main()
                                  g_Shots[i].active = 1;
                                  g_FireCooldown = FIRE_COOLDOWN;
                                  sfxShot();
-                                 break;
-              }
-         }
-         soundTick();
-    }
+                                  break;
+               }
+          }
+     }
 }
 
 
-                 // Update
+                  // Update
                  if (g_FireCooldown > 0) g_FireCooldown--;
                  for (i = 0; i < MAX_SHOTS; i++)
                  {
@@ -2740,14 +2749,15 @@ void main()
 
                  // Batch write all 32 sprites to VRAM en un sol cop
                  VDP_WriteVRAM(g_SprBuf, g_SpriteAttributeLow, g_SpriteAttributeHigh, 128);
-             }
-             else
-             {
-                 // During game over delay, disable all sprites
-                 u8 s;
-                 for (s = 0; s < 32; s++)
-                     VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
-             }
-        }
+              }
+              else
+              {
+                  // During game over delay, disable all sprites
+                  u8 s;
+                  for (s = 0; s < 32; s++)
+                      VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
+              }
+              soundTick();  // Cada frame, sempre (fins i tot al menu/pausa)
+         }
     }
 }

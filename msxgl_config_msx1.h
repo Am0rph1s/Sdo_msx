@@ -415,7 +415,7 @@
 #define PSG_CHIP					PSG_INTERNAL
 // - PSG_DIRECT ................... Function set directly the PSG registers
 // - PSG_INDIRECT ................. Function set a buffer (Apply() function must be call once a frame)
-#define PSG_ACCESS					PSG_INDIRECT
+#define PSG_ACCESS					PSG_DIRECT
 #define PSG_USE_NOTES				FALSE	// Add notes table to convert note to tone
 #define PSG_USE_EXTRA				TRUE	// Add helper functions to handle PSG settings
 #define PSG_USE_RESUME				TRUE	// Add function to allow playback pause and resume
