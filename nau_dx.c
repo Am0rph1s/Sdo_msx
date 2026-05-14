@@ -120,7 +120,7 @@
 #define SHIP_HIT_OY        2
 
 // Respawn - valors 1:1 del CPC
-#define SHIP_EXPL_TIMER    12   // CPC: ship_expl_timer = 12
+#define SHIP_EXPL_TIMER    9    // CPC: 12, nosaltres 9 = prou per veure l'explosio
 #define RESPAWN_INVUL_TICKS 40  // CPC: RESPAWN_INVUL_TICKS = 40
 
 // Game states - 1:1 CPC
@@ -296,32 +296,47 @@ static const u8 g_EnemyShotPattern[32] = {
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
 };
 
-// Explosion sprites (16x16) - creu radial que creix/decreix com al CPC
-// Radi enemic: frames 0,1,2,1 (radis 1,2,3,2)
-// Radi nau:    frames 0,1,2,3,2,1 (radis 1,2,3,4,3,2)
-static const u8 g_ExpSprite0[32] = { // radi 1
-    0x00,0x00,0x00,0x00,0x00,0x00,0x03,0x03,
-    0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x80,
-    0x80,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+// Explosion sprites (16x16) - cercles centrats a pixel (8,8)
+// ORDRE: TL (0-7), BL (8-15), TR (16-23), BR (24-31) ← com el boss!
+// Radi enemic: frames 0,1,2,1; Radi nau: frames 0,1,2,3,2,1
+
+static const u8 g_ExpSprite0[32] = { // radi 2 - quadrat 4x4 al centre
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x03,  // TL: row7 cols6-7
+    0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // BL: row8 cols6-7
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xC0,  // TR: row7 cols8-9
+    0xC0,0x00,0x00,0x00,0x00,0x00,0x00,0x00   // BR: row8 cols8-9
 };
-static const u8 g_ExpSprite1[32] = { // radi 2
-    0x00,0x00,0x00,0x00,0x00,0x03,0x07,0x07,
-    0x07,0x03,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x80,0xC0,0xC0,
-    0xC0,0x80,0x00,0x00,0x00,0x00,0x00,0x00
+static const u8 g_ExpSprite1[32] = { // radi 4 - cercle petit
+    0x00,0x00,0x00,0x00,0x00,0x07,0x0F,0x1F,  // TL: rows5-7 cols4-7
+    0x1F,0x0F,0x07,0x00,0x00,0x00,0x00,0x00,  // BL: rows8-10 cols4-7
+    0x00,0x00,0x00,0x00,0x00,0xE0,0xF0,0xF8,  // TR: rows5-7 cols8-11
+    0xF8,0xF0,0xE0,0x00,0x00,0x00,0x00,0x00   // BR: rows8-10 cols8-11
 };
-static const u8 g_ExpSprite2[32] = { // radi 3
-    0x00,0x00,0x00,0x00,0x03,0x03,0x0F,0x0F,
-    0x0F,0x03,0x03,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x80,0x80,0xE0,0xE0,
-    0xE0,0x80,0x80,0x00,0x00,0x00,0x00,0x00
+static const u8 g_ExpSprite2[32] = { // radi 6 - cercle mitja
+    0x00,0x03,0x0F,0x1F,0x3F,0x7F,0x7F,0xFF,  // TL
+    0xFF,0x7F,0x7F,0x3F,0x1F,0x0F,0x03,0x00,  // BL
+    0x00,0xC0,0xF0,0xF8,0xFC,0xFE,0xFE,0xFF,  // TR
+    0xFF,0xFE,0xFE,0xFC,0xF8,0xF0,0xC0,0x00   // BR
 };
-static const u8 g_ExpSprite3[32] = { // radi 4 (nau only)
-    0x00,0x00,0x00,0x03,0x03,0x03,0x1F,0x1F,
-    0x1F,0x03,0x03,0x03,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x80,0x80,0x80,0xF0,0xF0,
-    0xF0,0x80,0x80,0x80,0x00,0x00,0x00,0x00
+static const u8 g_ExpSprite3[32] = { // radi 8 - explosio maxima
+    0x07,0x1F,0x3F,0x7F,0xFF,0xFF,0xFF,0xFF,  // TL
+    0xFF,0xFF,0xFF,0xFF,0x7F,0x3F,0x1F,0x07,  // BL
+    0xE0,0xF8,0xFC,0xFE,0xFF,0xFF,0xFF,0xFF,  // TR
+    0xFF,0xFF,0xFF,0xFF,0xFE,0xFC,0xF8,0xE0   // BR
+};
+// Ship explosion bigger composite (white + red like the ship itself)
+// ORDRE: TL, BL, TR, BR (com el boss)
+static const u8 g_ShipExpWhite[32] = { // white layer - radi 6-8
+    0x18,0x3C,0x7E,0xFF,0xE7,0xC3,0x81,0x81,  // TL
+    0x81,0xC3,0xE7,0xFF,0x7E,0x3C,0x18,0x00,  // BL
+    0x30,0x78,0xFC,0xFE,0xE6,0xC6,0x82,0x82,  // TR
+    0x82,0xC6,0xE6,0xFE,0xFC,0x78,0x30,0x00   // BR
+};
+static const u8 g_ShipExpRed[32] = { // red/orange core - radi 3-5
+    0x00,0x00,0x18,0x3C,0x7E,0x7E,0x7E,0x7E,  // TL
+    0x7E,0x7E,0x7E,0x3C,0x18,0x00,0x00,0x00,  // BL
+    0x00,0x00,0x30,0x78,0xFC,0xFC,0xFC,0xFC,  // TR
+    0xFC,0xFC,0xFC,0x78,0x30,0x00,0x00,0x00   // BR
 };
 
 // Enemy sprite - converted from CPC 12x12, centered in 16x16 (2px padding each side)
@@ -1485,8 +1500,8 @@ void TickExplosions()
 
 void RespawnShip()
 {
-    // 1:1 CPC: resetShipRuntimeState() + placeShipAtSpawn()
-    // NOTA: invulnerabilitat la posa UpdateShipExplosionState (despres de morir, no al comencar)
+    u8 i;
+    // 1:1 CPC: resetShipRuntimeState() + placeShipAtSpawn() + clearActiveCombatState
     g_ShipExploding  = 0;
     g_ShipExplTimer  = 0;
     g_ShipInvul      = 0;
@@ -1494,6 +1509,11 @@ void RespawnShip()
     g_FireCooldown   = 0;
     g_ShipX          = SHIP_SPAWN_X;
     g_ShipY          = SHIP_SPAWN_Y;
+    // CPC: clearActiveCombatState - ara aqui per no netejar pantalla durant l'explosio
+    for (i = 0; i < MAX_ENEMIES;     i++) g_Enemies[i].active    = 0;
+    for (i = 0; i < MAX_SHOTS;       i++) g_Shots[i].active      = 0;
+    for (i = 0; i < MAX_ENEMY_SHOTS; i++) g_EnemyShots[i].active = 0;
+    g_WaveActive = 0;
 }
 
 void UpdateShipExplosionState()
@@ -1533,12 +1553,7 @@ void TriggerShipHit()
     g_ShipExploding = 1;
     g_ShipExplTimer = SHIP_EXPL_TIMER;
     g_FireCooldown  = 0;
-
-    // CPC: clearActiveCombatState
-    for (i = 0; i < MAX_ENEMIES;     i++) g_Enemies[i].active    = 0;
-    for (i = 0; i < MAX_SHOTS;       i++) g_Shots[i].active      = 0;
-    for (i = 0; i < MAX_ENEMY_SHOTS; i++) g_EnemyShots[i].active = 0;
-    g_WaveActive = 0;  // CPC: clearAllEnemies sets wave_active=0
+    // NOTA: No netegem enemics aqui - ho fa RespawnShip per veure l'explosio
 }
 
 u8 RectOverlap(u8 x1, u8 y1, u8 w1, u8 h1, u8 x2, u8 y2, u8 w2, u8 h2){
@@ -2502,6 +2517,9 @@ void main()
     VDP_LoadSpritePattern(g_ExpSprite1,       60, 4);
     VDP_LoadSpritePattern(g_ExpSprite2,       64, 4);
     VDP_LoadSpritePattern(g_ExpSprite3,       68, 4);
+    // Ship explosion composite (white + red layers)
+    VDP_LoadSpritePattern(g_ShipExpWhite,     80, 4);
+    VDP_LoadSpritePattern(g_ShipExpRed,       84, 4);
     // Boss 16x16 (composite 2-sprite like player ship)
     VDP_LoadSpritePattern(g_BossWhiteNew,     72, 4);  // Boss white layer
     VDP_LoadSpritePattern(g_BossRedNew,       76, 4);  // Boss red layer
@@ -2629,27 +2647,7 @@ void main()
                  UpdateShipInvulnerability();
              }
 
-             // Game over - 1:1 CPC: 30 frames de scroll dramatic, sense text
-             // El text "GAME OVER" apareix a la pantalla d'hiscore (menu)
-             if (g_ShipLastLife && !g_ShipExploding)
-            {
-                if (g_GameOverDelay == 0)
-                {
-                    sfxGameOver();
-                    g_GameOverDelay = 1;
-                }
-                else if (g_GameOverDelay < 30)
-                {
-                    // Scroll segueix, pantalla buida de combat (dramatic)
-                    g_GameOverDelay++;
-                }
-                else
-                {
-                    EnterPostGame(0);
-                }
-            }
-
-             // Victoria (nivell final completat)
+              // Victoria (nivell final completat)
              if (g_Level > ENDGAME_FINAL_LEVEL)
                  EnterPostGame(1);
 
@@ -2669,16 +2667,26 @@ void main()
                  spr = 0;
                  g_FrameCount++;
 
-                 // Ship
+                 // Ship (spr 0-1)
                  if (!g_ShipExploding && (!g_ShipInvul || (g_ShipInvulTimer & 1)))
                  {
                      g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = 0;   g_SprBuf[spr*4+3] = COLOR_WHITE;       spr++;
                      g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = 4;   g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED;  spr++;
+                     // Si la nau es visible NO hi ha explosio
+                 }
+                 else if (g_ShipExploding)
+                 {
+                     // Explosio 2 capes (blanc exterior + vermell interior)
+                     u8 exp_pat_w, exp_pat_r;
+                     if (g_ShipExplTimer > 6) { exp_pat_w = 56; exp_pat_r = 60; }
+                     else if (g_ShipExplTimer > 3) { exp_pat_w = 60; exp_pat_r = 64; }
+                     else { exp_pat_w = 64; exp_pat_r = 68; }
+                     g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = exp_pat_w;  g_SprBuf[spr*4+3] = COLOR_WHITE;      spr++;
+                     g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = exp_pat_r;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
                  }
                  else
                  {
-                     // Nau invisible (blink o explosio): posa Y=208 (fora pantalla)
-                     g_SprBuf[spr*4+0] = VDP_SPRITE_DISABLE_SM1; spr++;
+                     // Nau invisible o invulnerable
                      g_SprBuf[spr*4+0] = VDP_SPRITE_DISABLE_SM1; spr++;
                  }
 
@@ -2690,7 +2698,7 @@ void main()
                          spr++;
                      }
 
-                 // Enemy shots
+                  // Enemy shots
                  for (i = 0; i < MAX_ENEMY_SHOTS && spr < 18; i++)
                      if (g_EnemyShots[i].active)
                      {
@@ -2720,17 +2728,14 @@ void main()
                      }
                  }
 
-                 // Explosions
+                  // Explosions
                  for (j = 0; j < MAX_EXPLOSIONS && spr < 30; j++)
                  {
-                     static const u8 exp_pat_e[4] = {56, 60, 64, 60};
                      static const u8 exp_pat_s[6] = {56, 60, 64, 68, 64, 60};
                      if (!g_Explosions[j].active) continue;
                      f = g_Explosions[j].frame;
-                     if (g_Explosions[j].kind == EXP_KIND_SHIP)
-                     { if (f > 5) f = 5; pat = exp_pat_s[f]; }
-                     else
-                     { if (f > 3) f = 3; pat = exp_pat_e[f]; }
+                     if (f > 5) f = 5;
+                     pat = exp_pat_s[f];
                      col = (f == 0) ? COLOR_WHITE :
                            (f == 1) ? COLOR_LIGHT_YELLOW : COLOR_MEDIUM_RED;
                      g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = col;
@@ -2756,8 +2761,21 @@ void main()
                   u8 s;
                   for (s = 0; s < 32; s++)
                       VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
-              }
-              soundTick();  // Cada frame, sempre (fins i tot al menu/pausa)
+               }
+               // Game over check - DESPRES del renderitzat de sprites (per veure l'explosio)
+               if (g_ShipLastLife && !g_ShipExploding)
+               {
+                   if (g_GameOverDelay == 0)
+                   {
+                       sfxGameOver();
+                       g_GameOverDelay = 1;
+                   }
+                   else if (g_GameOverDelay < 30)
+                       g_GameOverDelay++;
+                   else
+                       EnterPostGame(0);
+               }
+               soundTick();  // Cada frame, sempre (fins i tot al menu/pausa)
          }
     }
 }
