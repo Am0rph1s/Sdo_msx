@@ -25,8 +25,8 @@
 #define SHIP_MAX_Y      (SCREEN_H - SHIP_H - 8)
 
 #define MAX_SHOTS       4
-#define SHOT_SPEED      6
-#define FIRE_COOLDOWN   3   // CPC: 1 (cada 2 frames), nosaltres 3 (cada 4)
+#define SHOT_SPEED      3
+#define FIRE_COOLDOWN   4   // CPC: 1, nosaltres 4 (per compensar 50fps estables)
 
 // Starfield - 3 layers (mes estels i mes rapid que l'original)
 #define N1              8    // slow stars
@@ -44,10 +44,10 @@
 #define ENEMY_TYPE_BOSS    5
 
 // Enemy speeds - 1:1 CPC (adaptats a MSX: CPC té 50Hz i pixels més grans)
-#define ENEMY_SPEED_BASIC   3
-#define ENEMY_SPEED_FAST    3
-#define ENEMY_SPEED_HEAVY   2
-#define ENEMY_SPEED_DIVER   4
+#define ENEMY_SPEED_BASIC   2
+#define ENEMY_SPEED_FAST    2
+#define ENEMY_SPEED_HEAVY   1
+#define ENEMY_SPEED_DIVER   3
 #define ENEMY_SPEED_BOMBER  2
 #define ENEMY_SPEED_BOSS    1   // Boss moves at 1 px/frame vertically
 
@@ -88,7 +88,7 @@
 #define BOSS_TIER_LEVEL_5    0     // Level 5: 12 HP, speed 1, 2 bullets
 #define BOSS_HP_PER_TIER     5
 #define BOSS_LANE_W          ((u8)(GAME_W / 3u))  // CPC: screen/3 per lane
-#define BOSS_HOLD_Y          74   // CPC: GAME_Y0+58
+#define BOSS_HOLD_Y          58   // CPC: 74, nosaltres 58 (mes amunt)
 #define BOSS_TIER_LEVEL_15   2     // Level 15: 22 HP, speed 2, 2 bullets
 #define BOSS_TIER_LEVEL_20   3     // Level 20: 27 HP, speed 2, 3 bullets
 #define BOSS_TIER_LEVEL_25   4     // Level 25: 32 HP, speed 3, 3 bullets
@@ -102,15 +102,16 @@
 #define ENEMY_BOSS_H       16
 #define ENEMYSHOT_W        2
 #define ENEMYSHOT_H        6
-#define ENEMYSHOT_SPEED_Y  5
-#define ENEMYSHOT_COOLDOWN 24
-#define ENEMYSHOT_VX_FAST  2
+#define ENEMYSHOT_SPEED_Y  4
+#define ENEMYSHOT_COOLDOWN 30
+#define ENEMYSHOT_VX_FAST  1
 #define ENEMYSHOT_VX_SLOW  1
 
 // Explosions
 #define MAX_EXPLOSIONS     4
 #define EXP_KIND_ENEMY     0
 #define EXP_KIND_SHIP      1
+#define EXP_KIND_BOSS      2   // Boss explosion (2 sprites compuestos)
 
 // Enemy shots
 #define MAX_ENEMY_SHOTS    11
@@ -170,7 +171,7 @@ static const u8 g_BarPattern[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 typedef struct { u8 x; u8 y; } TStar;
 typedef struct { u8 x; u8 y; u8 active; } TShot;
 typedef struct { u8 x; u8 y; u8 active; u8 type; u8 fire_cd; i8 vx; u8 vy; u8 pattern; u8 zig_timer; u8 health; u8 boss_lane_x0; } TEnemy;
-typedef struct { u8 x; u8 y; u8 active; i8 vx; } TEnemyShot;
+typedef struct { u8 x; u8 y; u8 active; i8 vx; u8 vy; u8 pattern; } TEnemyShot;
 typedef struct { u8 x; u8 y; u8 active; u8 frame; u8 kind; } TExplosion;
 typedef struct { u16 score; u8 level; u8 name[3]; } THiScore;
 typedef struct { u8 waves; u8 per_wave; u8 mask; u8 flags; u8 intro_mask; } TLevelConfig;
@@ -180,8 +181,8 @@ typedef struct { u8 waves; u8 per_wave; u8 mask; u8 flags; u8 intro_mask; } TLev
 //=============================================================================
 
 static u8  g_ShipX, g_ShipY;
-static u8  g_ShipSpeedX = 4;
-static u8  g_ShipSpeedY = 4;
+static u8  g_ShipSpeedX = 3;
+static u8  g_ShipSpeedY = 3;
 static u8  g_ShipExploding  = 0;
 static u8  g_ShipExplTimer  = 0;
 static u8  g_ShipInvul      = 0;
@@ -214,12 +215,14 @@ static u8  g_LastLevel      = 1;
 static u8  g_RedefineStep   = 0;
 // Tecles actuals (fila,bit) - valors per defecte = fletxes + Z + P + Return
 // KEY_LEFT=row8b4, KEY_RIGHT=row8b7, KEY_UP=row8b5, KEY_DOWN=row8b6
-// KEY_Z=row5b7, KEY_P=row9b?, KEY_RETURN=row7b?
+// KEY_Z=row5b7, KEY_P=row9b2, KEY_Q=row4b6
 static u8  g_KeyLeft   = KEY_LEFT;
 static u8  g_KeyRight  = KEY_RIGHT;
 static u8  g_KeyUp     = KEY_UP;
 static u8  g_KeyDown   = KEY_DOWN;
 static u8  g_KeyFire   = KEY_Z;
+static u8  g_KeyPause  = KEY_P;
+static u8  g_KeyQuit   = KEY_Q;
 static u8  g_LastKeyPressed = 0;
 static TShot      g_Shots[MAX_SHOTS];
 static u8         g_FireCooldown = 0;
@@ -281,19 +284,24 @@ static const u8 g_SpriteRed[32] = {
     0xE0, 0xE0, 0xDC, 0xFE, 0x00, 0x00, 0x30, 0x30
 };
 
-// Shot sprite (8x8) - centrat en slot 16x16
-// Els primers 8 bytes son el patró, els altres 24 zeros
+// Shot sprite (8x8 in 16x16 slot) - original size
 static const u8 g_ShotPattern[8] = {
     0x18, 0x3C, 0x3C, 0x3C, 0x18, 0x18, 0x18, 0x00
 };
 
-// Enemy shot sprite (16x16) - 2px ample x 6px alt, des de fila 0
-// Centrat a px 7,8 (bit0 left byte + bit7 right byte)
+// Enemy shot sprite (16x16) - 1 pixel vermell (CPC: 2x4 pixel)
 static const u8 g_EnemyShotPattern[32] = {
-    0x01,0x01,0x01,0x01,0x01,0x01,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x80,0x80,0x80,0x80,0x80,0x80,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // TL: buit
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // BL: buit
+    0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x80,  // TR: 1 pixel col 8, rows 6-7
+    0x80,0x80,0x00,0x00,0x00,0x00,0x00,0x00   // BR: 1 pixel col 8, rows 8-9
+};
+// Bomber shot (16x16) - allargat, 2px ample x 8px alt (punta avall)
+static const u8 g_BomberShotPattern[32] = {
+    0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x01,  // TL: rows 6-7, col 7
+    0x01,0x01,0x01,0x01,0x01,0x01,0x00,0x00,  // BL: rows 8-13, col 7
+    0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x80,  // TR: rows 6-7, col 8
+    0x80,0x80,0x80,0x80,0x80,0x80,0x00,0x00   // BR: rows 8-13, col 8
 };
 
 // Explosion sprites (16x16) - cercles centrats a pixel (8,8)
@@ -717,11 +725,11 @@ static const u16 g_EnemyScore[5] = {
 // Boss tier data: HP, vertical speed, fire rate cooldown, bullet spread count
 typedef struct { u8 hp; u8 vy; u8 fire_cd; u8 num_bullets; } TBossTier;
 static const TBossTier g_BossTierTable[BOSS_TIERS_MAX] = {
-    {12, 1, 8,  2},   // Tier 0 (Level 5)
-    {17, 1, 7,  2},   // Tier 1 (Level 10)
-    {22, 2, 6,  2},   // Tier 2 (Level 15)
-    {27, 2, 5,  3},   // Tier 3 (Level 20)
-    {32, 3, 5,  3}    // Tier 4 (Level 25)
+    {12, 1, 10, 3},   // Tier 0 (Level 5): 3 bales
+    {17, 1,  8, 3},   // Tier 1 (Level 10): 3 bales
+    {22, 2,  6, 3},   // Tier 2 (Level 15): 3 bales
+    {27, 2,  5, 3},   // Tier 3 (Level 20): 3 bales
+    {32, 3,  4, 3}    // Tier 4 (Level 25): 3 bales
 };
 
 static const TLevelConfig g_LevelTable[25] = {
@@ -992,6 +1000,7 @@ static void StartNewWave()
         }
         g_WaveBonusBase = ENEMY_SCORE_BOSS;
         g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
+        sfxLevelUp();  // So d'avís de boss
         g_HudDirty = 1;
         return;
     }
@@ -1026,6 +1035,7 @@ static void StartNewWave()
         g_WaveSpawned = 2;
         g_WaveBonusBase = ENEMY_SCORE_BOSS;
         g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
+        sfxLevelUp();
         return;
     }
 
@@ -1112,7 +1122,7 @@ void InitEnemies()
 {
     u8 i;
     for (i = 0; i < MAX_ENEMIES;     i++) g_Enemies[i].active    = 0;
-    for (i = 0; i < MAX_ENEMY_SHOTS; i++) g_EnemyShots[i].active = 0;
+    for (i = 0; i < MAX_ENEMY_SHOTS; i++) { g_EnemyShots[i].active = 0; g_EnemyShots[i].pattern = 12; g_EnemyShots[i].vy = ENEMYSHOT_SPEED_Y; }
     for (i = 0; i < MAX_EXPLOSIONS;  i++) g_Explosions[i].active = 0;
     // 1:1 CPC: initEnemies wave state
     g_SpawnTimer    = SPAWN_FIRST_DELAY;
@@ -1125,47 +1135,83 @@ void InitEnemies()
     g_WaveIndianDelay = 0;
 }
 
-void SpawnEnemyShot(u8 ex, u8 ey)
+// CPC: enemyShotAimVX - apunta cap a la nau
+static i8 enemyShotAimVX(u8 sx)
+{
+    i16 dx = (i16)g_ShipX - (i16)sx;
+    if      (dx <= -12) return -ENEMYSHOT_VX_FAST;
+    else if (dx <=  -4) return -ENEMYSHOT_VX_SLOW;
+    else if (dx >=  12) return  ENEMYSHOT_VX_FAST;
+    else if (dx >=   4) return  ENEMYSHOT_VX_SLOW;
+    return 0;
+}
+
+void SpawnEnemyShot(u8 ex, u8 ey, u8 enemy_type)
 {
     u8 i;
-    i8 vx;
+    u8 pat = (enemy_type == ENEMY_TYPE_BOMBER) ? 88 : 12;
     for (i = 0; i < MAX_ENEMY_SHOTS; i++)
     {
         if (!g_EnemyShots[i].active)
         {
-            // 1:1 CPC: enemyShotAimVX
-            i16 dx = (i16)g_ShipX - (i16)ex;
-            if      (dx <= -12) vx = -ENEMYSHOT_VX_FAST;
-            else if (dx <=  -4) vx = -ENEMYSHOT_VX_SLOW;
-            else if (dx >=  12) vx =  ENEMYSHOT_VX_FAST;
-            else if (dx >=   4) vx =  ENEMYSHOT_VX_SLOW;
-            else                vx =  0;
-            g_EnemyShots[i].x      = ex + ENEMY_W / 2 - 1;
-            g_EnemyShots[i].y      = ey + ENEMY_H;
-            g_EnemyShots[i].vx     = vx;
-            g_EnemyShots[i].active = 1;
+            g_EnemyShots[i].x       = ex + ENEMY_W / 2 - 1;
+            g_EnemyShots[i].y       = ey + ENEMY_H;
+            g_EnemyShots[i].vx      = enemyShotAimVX(ex + ENEMY_W / 2 - 1);
+            g_EnemyShots[i].vy      = ENEMYSHOT_SPEED_Y;
+            g_EnemyShots[i].pattern = pat;
+            g_EnemyShots[i].active  = 1;
             return;
         }
     }
 }
 
-// Boss multi-shot: spread bullets at offset angles
+// Boss shots: alterna 2 aimed (CPC) o 3 en ventall real
 static void SpawnBossShots(u8 ex, u8 ey, u8 num_bullets)
 {
-    u8 j, spawned = 0;
-    i8 vx_offsets[3] = {-1, 0, 1};
+    u8 tier = (g_Level >= 25) ? 4 : ((g_Level - 1) / 5);
+    u8 bvy = ENEMYSHOT_SPEED_Y + tier/2;
+    if (tier >= 3) bvy += 2;
     
-    for (j = 0; j < num_bullets && spawned < MAX_ENEMY_SHOTS; j++)
+    u8 is_3shot = (Math_GetRandom8() & 1) && num_bullets > 2;
+    u8 n = is_3shot ? 3 : 2;
+    
+    u8 s, spawned = 0;
+    for (s = 0; s < n && spawned < MAX_ENEMY_SHOTS; s++)
     {
         u8 k;
         for (k = 0; k < MAX_ENEMY_SHOTS; k++)
         {
             if (!g_EnemyShots[k].active)
             {
-                g_EnemyShots[k].x      = ex + ENEMY_BOSS_W / 2;
-                g_EnemyShots[k].y      = ey + ENEMY_BOSS_H;
-                g_EnemyShots[k].vx     = vx_offsets[j];
-                g_EnemyShots[k].active = 1;
+                i16 xx;
+                u8 bx = (u8)(ex + ENEMY_BOSS_W / 2);
+                if (is_3shot)
+                {
+                    // 3 fan: posicio ±3 amb VELOCITAT FIXA (no apunten)
+                    static const i8 fan_vx[3] = {-1, 0, 1};
+                    if (s == 0) xx = (i16)bx - 3;
+                    else if (s == 1) xx = (i16)bx;
+                    else xx = (i16)bx + 3;
+                    if (xx < GAME_X0) xx = GAME_X0;
+                    if (xx > GAME_X1) xx = GAME_X1;
+                    g_EnemyShots[k].x       = (u8)xx;
+                    g_EnemyShots[k].y       = ey + ENEMY_BOSS_H;
+                    g_EnemyShots[k].vx      = fan_vx[s];
+                }
+                else
+                {
+                    // 2 aimed: CPC style
+                    xx = (i16)bx + (s ? 3 : -3);
+                    if (xx < GAME_X0) xx = GAME_X0;
+                    if (xx > GAME_X1) xx = GAME_X1;
+                    g_EnemyShots[k].x       = (u8)xx;
+                    g_EnemyShots[k].y       = ey + ENEMY_BOSS_H;
+                    g_EnemyShots[k].vx      = enemyShotAimVX((u8)xx);
+                }
+                g_EnemyShots[k].vy      = bvy;
+                g_EnemyShots[k].vy      = bvy;
+                g_EnemyShots[k].pattern = 12;
+                g_EnemyShots[k].active  = 1;
                 spawned++;
                 break;
             }
@@ -1173,7 +1219,7 @@ static void SpawnBossShots(u8 ex, u8 ey, u8 num_bullets)
     }
 }
 
-void SpawnEnemyShot(u8 ex, u8 ey);
+void SpawnEnemyShot(u8 ex, u8 ey, u8 enemy_type);
 
 void UpdateEnemies()
 {
@@ -1198,7 +1244,7 @@ void UpdateEnemies()
             if (xmx > (u8)(GAME_X1 - ENEMY_BOSS_W)) xmx = (u8)(GAME_X1 - ENEMY_BOSS_W);
             if (xmn < GAME_X0) xmn = GAME_X0;
             
-            // Dive to hold Y position
+            // Dive to hold Y position (CPC 1:1)
             if (g_Enemies[i].y < BOSS_HOLD_Y)
             {
                 g_Enemies[i].y += g_Enemies[i].vy;
@@ -1262,7 +1308,10 @@ void UpdateEnemies()
             { 
                 SpawnBossShots(g_Enemies[i].x, g_Enemies[i].y, g_BossTierTable[tier].num_bullets);
                 sfxEnemyShot();
-                g_Enemies[i].fire_cd = g_BossTierTable[tier].fire_cd; 
+                // CPC: cooldown AMPLI per crear espais jugables (50fps)
+                u8 cd = (u8)(15u + (Math_GetRandom8() & 15u) - (tier * 2u));
+                if (cd < 6u) cd = 6u;
+                g_Enemies[i].fire_cd = cd;
             }
         }
         else
@@ -1286,7 +1335,7 @@ void UpdateEnemies()
             }
 
             if (g_Enemies[i].fire_cd > 0) g_Enemies[i].fire_cd--;
-            else { SpawnEnemyShot(g_Enemies[i].x, g_Enemies[i].y); sfxEnemyShot(); g_Enemies[i].fire_cd = ENEMYSHOT_COOLDOWN; }
+            else { SpawnEnemyShot(g_Enemies[i].x, g_Enemies[i].y, g_Enemies[i].type); sfxEnemyShot(); g_Enemies[i].fire_cd = ENEMYSHOT_COOLDOWN; }
         }
 
         if (g_Enemies[i].y >= SCREEN_H) { g_Enemies[i].active = 0; continue; }
@@ -1296,7 +1345,7 @@ void UpdateEnemies()
     for (i = 0; i < MAX_ENEMY_SHOTS; i++)
     {
         if (!g_EnemyShots[i].active) continue;
-        g_EnemyShots[i].y += ENEMYSHOT_SPEED_Y;
+        g_EnemyShots[i].y = (u8)(g_EnemyShots[i].y + g_EnemyShots[i].vy);
         g_EnemyShots[i].x  = (u8)((i8)g_EnemyShots[i].x + g_EnemyShots[i].vx);
         if (g_EnemyShots[i].y >= SCREEN_H ||
             g_EnemyShots[i].x < GAME_X0   ||
@@ -1491,7 +1540,7 @@ void TickExplosions()
     for (i = 0; i < MAX_EXPLOSIONS; i++)
     {
         if (!g_Explosions[i].active) continue;
-        maxf = (g_Explosions[i].kind == EXP_KIND_SHIP) ? 6 : 4;
+        maxf = (g_Explosions[i].kind == EXP_KIND_SHIP || g_Explosions[i].kind == EXP_KIND_BOSS) ? 6 : 4;
         g_Explosions[i].frame++;
         if (g_Explosions[i].frame >= maxf)
             g_Explosions[i].active = 0;
@@ -1595,7 +1644,7 @@ void CheckCollisions()
                     g_WaveKilled++;  // 1:1 CPC: ++wave_killed
                     SpawnExplosion(g_Enemies[j].x + enemy_w/2 - 8,
                                    g_Enemies[j].y + enemy_h/2 - 8,
-                                   EXP_KIND_ENEMY);
+                                   (g_Enemies[j].type == ENEMY_TYPE_BOSS) ? EXP_KIND_BOSS : EXP_KIND_ENEMY);
                     sfxEnemyExplosion();
                     // Boss scores differently
                     if (g_Enemies[j].type == ENEMY_TYPE_BOSS)
@@ -1611,6 +1660,7 @@ void CheckCollisions()
                     SpawnExplosion(g_Enemies[j].x + enemy_w/2 - 8,
                                    g_Enemies[j].y + enemy_h/2 - 8,
                                    EXP_KIND_ENEMY);
+                    sfxEnemyExplosion();  // So d'impacte al boss/heavy/bomber
                     g_HudDirty = 1;  // Update HUD (boss HP bar etc.)
                 }
             }
@@ -2266,11 +2316,13 @@ void UpdateMenuInput()
                 case 2: g_KeyUp    = g_LastKeyPressed; break;
                 case 3: g_KeyDown  = g_LastKeyPressed; break;
                 case 4: g_KeyFire  = g_LastKeyPressed; break;
+                case 5: g_KeyPause = g_LastKeyPressed; break;
+                case 6: g_KeyQuit  = g_LastKeyPressed; break;
                 default: break;
             }
             g_RedefineStep++;
             g_TitlePhase = 0;
-            if (g_RedefineStep >= 5)
+            if (g_RedefineStep >= 7)
             {
                 g_TitleMode = TS_MENU;
                 g_RedefineStep = 0;
@@ -2390,10 +2442,10 @@ void UpdateMenuInput()
     }
     else if (g_TitleMode == TS_REDEFINE)
     {
-        static const char* const key_names[5] = {"LEFT","RIGHT","UP","DOWN","FIRE"};
+        static const char* const key_names[7] = {"LEFT","RIGHT","UP","DOWN","FIRE","PAUSE","QUIT"};
         HudDrawText(12, 6,  "SET KEYS",   HUD_FONT_COLOR_HI);
         HudDrawHLine(0,  8, 32, HUD_FONT_COLOR_CYN);
-        if (g_RedefineStep < 5)
+        if (g_RedefineStep < 7)
             HudDrawText(12, 12, key_names[g_RedefineStep], HUD_FONT_COLOR_HI);
         HudDrawText(10, 16, "PRESS A KEY", HUD_FONT_COLOR_NRM);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
@@ -2503,6 +2555,7 @@ void main()
     VDP_LoadSpritePattern(g_SpriteRed,        4,  4);
     VDP_LoadSpritePattern(g_ShotPattern,      8,  1);
     VDP_LoadSpritePattern(g_EnemyShotPattern, 12, 4);
+    VDP_LoadSpritePattern(g_BomberShotPattern, 88, 4);
     VDP_LoadSpritePattern(g_EnemyWhite,       16, 4);
     VDP_LoadSpritePattern(g_EnemyRed,         20, 4);
     VDP_LoadSpritePattern(g_EnemyFastWhite,   24, 4);
@@ -2583,12 +2636,22 @@ void main()
          {
              //=== PLAYING ===
 
-             // Pause/unpause with P key
+             // Pause/unpause with redefinable key
              static u8 p_key_was_pressed = 0;
-             u8 p_key_pressed = IS_KEY_PRESSED(Keyboard_Read(9), 2);  // P = row 9, bit 2
+             u8 p_key_pressed = IsKeyPressed(g_KeyPause);
              if (p_key_pressed && !p_key_was_pressed)
                  g_PausedFlag = !g_PausedFlag;
              p_key_was_pressed = p_key_pressed;
+
+             // Quit to menu with redefinable key (Q)
+             if (IsKeyPressed(g_KeyQuit))
+             {
+                 soundStopAll();
+                 g_GameState = GS_TITLE;
+                 g_TitleMode = TS_MENU;
+                 g_TitleDirty = 1;
+                 g_TitlePhase = 0;
+             }
 
              // Wall scroll + starfield (always update)
              UpdateWallScroll();
@@ -2702,11 +2765,34 @@ void main()
                  for (i = 0; i < MAX_ENEMY_SHOTS && spr < 18; i++)
                      if (g_EnemyShots[i].active)
                      {
-                         g_SprBuf[spr*4+0] = g_EnemyShots[i].y;  g_SprBuf[spr*4+1] = g_EnemyShots[i].x;  g_SprBuf[spr*4+2] = 12;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED;
+                         g_SprBuf[spr*4+0] = g_EnemyShots[i].y;  g_SprBuf[spr*4+1] = g_EnemyShots[i].x;  g_SprBuf[spr*4+2] = g_EnemyShots[i].pattern;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED;
                          spr++;
                      }
 
-                  // Enemies
+                  // Explosions (ABANS dels enemics per tenir mes prioritat)
+                 for (j = 0; j < MAX_EXPLOSIONS && spr < 28; j++)
+                 {
+                     static const u8 exp_pat_s[6] = {56, 60, 64, 68, 64, 60};
+                     if (!g_Explosions[j].active) continue;
+                     f = g_Explosions[j].frame;
+                     if (f > 5) f = 5;
+                     pat = exp_pat_s[f];
+                     col = (f == 0) ? COLOR_WHITE :
+                           (f == 1) ? COLOR_LIGHT_YELLOW : COLOR_MEDIUM_RED;
+                     if (g_Explosions[j].kind == EXP_KIND_BOSS)
+                     {
+                         g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = COLOR_WHITE; spr++;
+                         pat = exp_pat_s[(f < 5) ? f+1 : 5];
+                         g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
+                     }
+                     else
+                     {
+                         g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = col;
+                         spr++;
+                     }
+                 }
+
+                  // Enemies (darrere les explosions)
                  {
                      static const u8 etype_pat_w[5] = {16, 24, 32, 40, 48};
                      static const u8 etype_pat_r[5] = {20, 28, 36, 44, 52};
@@ -2726,10 +2812,10 @@ void main()
                              g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = etype_pat_r[j];  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
                          }
                      }
-                 }
+                  }
 
                   // Explosions
-                 for (j = 0; j < MAX_EXPLOSIONS && spr < 30; j++)
+                 for (j = 0; j < MAX_EXPLOSIONS && spr < 28; j++)
                  {
                      static const u8 exp_pat_s[6] = {56, 60, 64, 68, 64, 60};
                      if (!g_Explosions[j].active) continue;
@@ -2738,8 +2824,20 @@ void main()
                      pat = exp_pat_s[f];
                      col = (f == 0) ? COLOR_WHITE :
                            (f == 1) ? COLOR_LIGHT_YELLOW : COLOR_MEDIUM_RED;
-                     g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = col;
-                     spr++;
+                     // Boss/Heavy/Bomber: 2 sprites compostos (blanc+vermell)
+                     if (g_Explosions[j].kind == EXP_KIND_BOSS)
+                     {
+                         // White layer
+                         g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = COLOR_WHITE; spr++;
+                         // Red layer
+                         pat = exp_pat_s[(f < 5) ? f+1 : 5];
+                         g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
+                     }
+                     else
+                     {
+                         g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = col;
+                         spr++;
+                     }
                  }
 
                  // Desactiva sprites que sobren (Y=208 = off-screen)
