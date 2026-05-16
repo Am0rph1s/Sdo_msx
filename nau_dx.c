@@ -3,6 +3,13 @@
 #include "msxgl.h"
 #include "psg.h"
 
+
+
+
+
+
+
+
 //=============================================================================
 // CONSTANTS
 //=============================================================================
@@ -66,6 +73,9 @@
 
 // Wave system - 1:1 CPC
 #define WAVE_PLAN_MAX       8
+#define WAVE_MAX_HEAVY_PER_WAVE 5
+#define DIVER_WAVE_MIN      5
+#define DIVER_WAVE_MAX      8
 #define WAVE_MODE_RANK      0
 #define WAVE_MODE_INDIAN    1
 #define SPAWN_BASE          2
@@ -85,13 +95,20 @@
 #define LCFG_F_BOSS2  ((u8)2u)
 
 // Boss tiers - 1:1 CPC
-#define BOSS_TIER_LEVEL_5    0     // Level 5: 12 HP, speed 1, 2 bullets
+#define BOSS_HP_BASE         15
+#define BOSS_TIER_LEVEL_5    0
 #define BOSS_HP_PER_TIER     5
 #define BOSS_LANE_W          ((u8)(GAME_W / 3u))  // CPC: screen/3 per lane
 #define BOSS_HOLD_Y          58   // CPC: 74, nosaltres 58 (mes amunt)
-#define BOSS_TIER_LEVEL_15   2     // Level 15: 22 HP, speed 2, 2 bullets
-#define BOSS_TIER_LEVEL_20   3     // Level 20: 27 HP, speed 2, 3 bullets
-#define BOSS_TIER_LEVEL_25   4     // Level 25: 32 HP, speed 3, 3 bullets
+#define BOSS_Y_OSC           22
+#define BOSS_DUAL_LANE_HALF  24
+#define BOSS_DUAL_MIN_GAP    18
+#define BOSS_VOSC_DESC       0
+#define BOSS_VOSC_UP         1
+#define BOSS_VOSC_DOWN       2
+#define BOSS_TIER_LEVEL_15   2
+#define BOSS_TIER_LEVEL_20   3
+#define BOSS_TIER_LEVEL_25   4
 #define BOSS_TIERS_MAX       5
 
 // Enemies
@@ -102,10 +119,13 @@
 #define ENEMY_BOSS_H       16
 #define ENEMYSHOT_W        2
 #define ENEMYSHOT_H        6
-#define ENEMYSHOT_SPEED_Y  4
-#define ENEMYSHOT_COOLDOWN 30
+#define ENEMYSHOT_SPEED_Y  5
+#define ENEMYSHOT_COOLDOWN 18
+#define ENEMYSHOT_STAGGER  5
 #define ENEMYSHOT_VX_FAST  1
 #define ENEMYSHOT_VX_SLOW  1
+#define ENEMYSHOT_TYPE_BULLET 0
+#define ENEMYSHOT_TYPE_BOMB   1
 
 // Explosions
 #define MAX_EXPLOSIONS     4
@@ -153,9 +173,8 @@
 
 // Helper: check if a redefinable key is pressed
 u8 IsKeyPressed(u8 key) { return IS_KEY_PRESSED(Keyboard_Read(key & 0x0F), key); }
-
 // Barra HP del boss - patro i color (static const perque es carrega a InitGamePlay)
-static const u8 g_BarPattern[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+
 
 // Hi-scores
 #define HISCORE_COUNT    3
@@ -170,8 +189,8 @@ static const u8 g_BarPattern[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 
 typedef struct { u8 x; u8 y; } TStar;
 typedef struct { u8 x; u8 y; u8 active; } TShot;
-typedef struct { u8 x; u8 y; u8 active; u8 type; u8 fire_cd; i8 vx; u8 vy; u8 pattern; u8 zig_timer; u8 health; u8 boss_lane_x0; } TEnemy;
-typedef struct { u8 x; u8 y; u8 active; i8 vx; u8 vy; u8 pattern; } TEnemyShot;
+typedef struct { u8 x; u8 y; u8 active; u8 type; u8 fire_cd; i8 vx; u8 vy; u8 pattern; u8 zig_timer; u8 health; u8 boss_hp_max; u8 boss_lane_x0; u8 boss_vosc; } TEnemy;
+typedef struct { u8 x; u8 y; u8 active; i8 vx; u8 vy; u8 pattern; u8 cd; u8 type; } TEnemyShot;
 typedef struct { u8 x; u8 y; u8 active; u8 frame; u8 kind; } TExplosion;
 typedef struct { u16 score; u8 level; u8 name[3]; } THiScore;
 typedef struct { u8 waves; u8 per_wave; u8 mask; u8 flags; u8 intro_mask; } TLevelConfig;
@@ -189,7 +208,7 @@ static u8  g_ShipInvul      = 0;
 static u8  g_ShipInvulTimer = 0;
 static u8  g_ShipLastLife   = 0;  // 1:1 CPC: ship_last_life
 static u8  g_GameOverDelay  = 0;
-static u8  g_FrameCount     = 0;
+
 static u8  g_PausedFlag     = 0;  // 1 = paused, 0 = playing
 
 // Game state
@@ -230,7 +249,7 @@ static TEnemy     g_Enemies[MAX_ENEMIES];
 static TEnemyShot g_EnemyShots[MAX_ENEMY_SHOTS];
 static TExplosion g_Explosions[MAX_EXPLOSIONS];
 static u16        g_Score = 0;
-static u8         g_Lives = 3;
+static u8         g_Lives = 2;
 static u8         g_Level = 1;
 static u8         g_HudDirty = 1;
 
@@ -251,6 +270,8 @@ static u8  g_WaveSlotY[WAVE_PLAN_MAX];
 static u8  g_WaveSlotType[WAVE_PLAN_MAX];
 static u8  g_WaveUnifiedPatt = PATT_STRAIGHT;
 static i8  g_WaveUnifiedVX   = 0;
+static u8  g_BossLaneIdx     = 1;
+static u8  g_DualBossAimLock = 0;
 
 #define SHIP_SPAWN_X  (GAME_X0 + GAME_W / 2 - SHIP_W / 2)
 #define SHIP_SPAWN_Y  (SCREEN_H - SHIP_H - 8)
@@ -326,27 +347,6 @@ static const u8 g_ExpSprite2[32] = { // radi 6 - cercle mitja
     0x00,0xC0,0xF0,0xF8,0xFC,0xFE,0xFE,0xFF,  // TR
     0xFF,0xFE,0xFE,0xFC,0xF8,0xF0,0xC0,0x00   // BR
 };
-static const u8 g_ExpSprite3[32] = { // radi 8 - explosio maxima
-    0x07,0x1F,0x3F,0x7F,0xFF,0xFF,0xFF,0xFF,  // TL
-    0xFF,0xFF,0xFF,0xFF,0x7F,0x3F,0x1F,0x07,  // BL
-    0xE0,0xF8,0xFC,0xFE,0xFF,0xFF,0xFF,0xFF,  // TR
-    0xFF,0xFF,0xFF,0xFF,0xFE,0xFC,0xF8,0xE0   // BR
-};
-// Ship explosion bigger composite (white + red like the ship itself)
-// ORDRE: TL, BL, TR, BR (com el boss)
-static const u8 g_ShipExpWhite[32] = { // white layer - radi 6-8
-    0x18,0x3C,0x7E,0xFF,0xE7,0xC3,0x81,0x81,  // TL
-    0x81,0xC3,0xE7,0xFF,0x7E,0x3C,0x18,0x00,  // BL
-    0x30,0x78,0xFC,0xFE,0xE6,0xC6,0x82,0x82,  // TR
-    0x82,0xC6,0xE6,0xFE,0xFC,0x78,0x30,0x00   // BR
-};
-static const u8 g_ShipExpRed[32] = { // red/orange core - radi 3-5
-    0x00,0x00,0x18,0x3C,0x7E,0x7E,0x7E,0x7E,  // TL
-    0x7E,0x7E,0x7E,0x3C,0x18,0x00,0x00,0x00,  // BL
-    0x00,0x00,0x30,0x78,0xFC,0xFC,0xFC,0xFC,  // TR
-    0xFC,0xFC,0xFC,0x78,0x30,0x00,0x00,0x00   // BR
-};
-
 // Enemy sprite - converted from CPC 12x12, centered in 16x16 (2px padding each side)
 // MSX format: first 16 bytes = left half (px 0-7) per row, next 16 = right half (px 8-15)
 // White layer: C (blue->white), W (white), Y (yellow->white)
@@ -415,20 +415,6 @@ static const u8 g_EnemyBomberRed[32] = {
     0xCC,0x0C,0x18,0xF0,0xF0,0xC0,0x00,0x00
 };
 
-// Legacy single 16x16 boss (for compatibility, not used with 32x32 mode)
-static const u8 g_BossWhite[32] = {
-    0x00,0x00,0x00,0x0F,0x1F,0x3F,0x7F,0x7E,
-    0x3C,0x1F,0x0F,0x07,0x03,0x01,0x00,0x00,
-    0x00,0x00,0x00,0xF0,0xF8,0xFC,0xFE,0x7E,
-    0x3C,0xF8,0xF0,0xE0,0xC0,0x80,0x00,0x00
-};
-static const u8 g_BossRed[32] = {
-    0x00,0x00,0x00,0x00,0x00,0x00,0x10,0x38,
-    0x38,0x10,0x00,0x00,0x00,0x00,0x00,0x00,
-    0x00,0x00,0x00,0x00,0x00,0x00,0x08,0x1C,
-    0x1C,0x08,0x00,0x00,0x00,0x00,0x00,0x00
-};
-
 // Boss sprite - CPC mothership ovni converted to MSX 16x16
 // Like player ship: 2 layers (white + red) that composite to show details
 // 
@@ -476,15 +462,15 @@ static const u8 g_RockBase[8] = {
     0xFF, 0xAA, 0xFF, 0x55,
     0xFF, 0xAA, 0xFF, 0x55
 };
-static const u8 g_RockColor[8] = {
-    0x54, 0x54, 0x54, 0x54,
-    0x54, 0x54, 0x54, 0x54
-};
+
+
 
 void InitWallTiles()
 {
     u8 phase, row;
     u8 tile[8];
+    u8 rcol[8];
+    for (row = 0; row < 8; row++) rcol[row] = 0x54;
     for (phase = 0; phase < 8; phase++)
     {
         for (row = 0; row < 8; row++)
@@ -492,9 +478,9 @@ void InitWallTiles()
         VDP_LoadBankPattern_GM2(tile, 1, 0, WALL_TILE_BASE + phase);
         VDP_LoadBankPattern_GM2(tile, 1, 1, WALL_TILE_BASE + phase);
         VDP_LoadBankPattern_GM2(tile, 1, 2, WALL_TILE_BASE + phase);
-        VDP_LoadBankColor_GM2(g_RockColor, 1, 0, WALL_TILE_BASE + phase);
-        VDP_LoadBankColor_GM2(g_RockColor, 1, 1, WALL_TILE_BASE + phase);
-        VDP_LoadBankColor_GM2(g_RockColor, 1, 2, WALL_TILE_BASE + phase);
+        VDP_LoadBankColor_GM2(rcol, 1, 0, WALL_TILE_BASE + phase);
+        VDP_LoadBankColor_GM2(rcol, 1, 1, WALL_TILE_BASE + phase);
+        VDP_LoadBankColor_GM2(rcol, 1, 2, WALL_TILE_BASE + phase);
     }
 }
 
@@ -581,7 +567,7 @@ void InitStars(TStar* s, u8 n, u8 base)
     // Usem una sequencia de Halton simplificada per evitar ordenacio
     static const u8 xoff[16] = {11, 37, 63, 21, 51, 7, 41, 27, 57, 17, 47, 31, 3, 53, 13, 45};
     static const u8 yoff[16] = {17, 83, 43, 131, 67, 107, 23, 157, 53, 97, 173, 61, 113, 79, 137, 149};
-    u8 span = STAR_X1 - STAR_X0;
+    u8 span = (u8)(STAR_X1 - STAR_X0);
     for (i = 0; i < n; i++)
     {
         s[i].x = STAR_X0 + (u8)(((u16)xoff[i] * span) >> 6);
@@ -609,13 +595,49 @@ void TickStars(TStar* s, u8 n, u8 speed, u8 base)
 // Forward declarations
 void HudDrawText(u8 col, u8 row, const char* s, u8 colorByte);
 void HudDrawHLine(u8 col, u8 row, u8 len, u8 colorByte);
+void sfxLevelUp(void);
+void sfxEnemyShot(void);
+void sfxBeep(void);
+void EnterPostGame(u8 won);
+static u8 BossTierFromLevel(u8 lv);
+
+
+
 
 // Boss max HP per tier (defined in table below)
 static u8 GetBossMaxHP(u8 tier)
 {
-    static const u8 hpt[5] = {12, 17, 22, 27, 32};
-    if (tier > 4) tier = 4;
-    return hpt[tier];
+    return (u8)(BOSS_HP_BASE + tier * BOSS_HP_PER_TIER);
+}
+
+static u8 ScoreFloorExtraLives(u16 s)
+{
+    u8 n = 0;
+    while (s >= EXTRA_LIFE_EVERY)
+    {
+        s = (u16)(s - EXTRA_LIFE_EVERY);
+        n++;
+    }
+    return n;
+}
+
+static void AddScore(u16 points)
+{
+    u16 old_score = g_Score;
+    u16 new_score = (u16)(g_Score + points);
+    u8 hi, lo;
+
+    g_Score = (new_score < g_Score) ? 65535u : new_score;
+    hi = ScoreFloorExtraLives(g_Score);
+    lo = ScoreFloorExtraLives(old_score);
+    while (hi > lo)
+    {
+        lo++;
+        g_Lives++;
+        g_BonusDisplayCnt = 20;
+        sfxBeep();
+    }
+    g_HudDirty = 1;
 }
 
 void UpdateHUD()
@@ -676,19 +698,20 @@ void UpdateHUD()
     {
         u8 has_boss = 0;
         u8 cur_hp = 0;
+        u8 max_hp = 0;
         for (i = 0; i < MAX_ENEMIES; i++)
         {
             if (g_Enemies[i].active && g_Enemies[i].type == ENEMY_TYPE_BOSS)
             {
                 cur_hp = g_Enemies[i].health;
+                max_hp = g_Enemies[i].boss_hp_max;
                 has_boss = 1;
                 break;
             }
         }
         if (has_boss)
         {
-            u8 tier = (g_Level >= 25) ? 4 : ((g_Level - 1) / 5);
-            u8 max_hp = GetBossMaxHP(tier);
+            if (!max_hp) max_hp = GetBossMaxHP(BossTierFromLevel(g_Level));
             HudDrawText(HUD_COL, 12, "HP", HUD_FONT_COLOR_HI);
             u8 filled = (u8)((u16)cur_hp * 5u / max_hp);
             for (t = 0; t < 5; t++)
@@ -725,12 +748,14 @@ static const u16 g_EnemyScore[5] = {
 // Boss tier data: HP, vertical speed, fire rate cooldown, bullet spread count
 typedef struct { u8 hp; u8 vy; u8 fire_cd; u8 num_bullets; } TBossTier;
 static const TBossTier g_BossTierTable[BOSS_TIERS_MAX] = {
-    {12, 1, 10, 3},   // Tier 0 (Level 5): 3 bales
-    {17, 1,  8, 3},   // Tier 1 (Level 10): 3 bales
-    {22, 2,  6, 3},   // Tier 2 (Level 15): 3 bales
-    {27, 2,  5, 3},   // Tier 3 (Level 20): 3 bales
-    {32, 3,  4, 3}    // Tier 4 (Level 25): 3 bales
+    {15, 1, 8, 2},
+    {20, 1, 8, 2},
+    {25, 2, 7, 3},
+    {30, 2, 6, 3},
+    {35, 3, 6, 3}
 };
+static const u8 g_BossFireCdBase[4] = {8, 8, 7, 6};
+static const u8 g_BossFireCdRandMask[4] = {4, 3, 3, 2};
 
 static const TLevelConfig g_LevelTable[25] = {
     /* 1-5 Rocky */
@@ -847,6 +872,48 @@ static u8 PickTypeForWave(u8 mask)
     return buf[idx];
 }
 
+static u8 WaveMaxFastAllowed()
+{
+    if (g_Level >= 16) return 0;
+    if (g_Level >= 13) return 6;
+    if (g_Level >= 9)  return 5;
+    if (g_Level >= 6)  return 4;
+    if (g_Level >= 4)  return 3;
+    return 2;
+}
+
+static u8 HeavyWaveCapForLevel()
+{
+    if (g_Level >= 21) return 5;
+    if (g_Level >= 16) return 4;
+    if (g_Level >= 11) return 3;
+    return WAVE_MAX_HEAVY_PER_WAVE;
+}
+
+static u8 BomberWaveCapForLevel()
+{
+    if (g_Level >= 23) return 5;
+    if (g_Level >= 22) return 4;
+    return 3;
+}
+
+static u8 PickTypeForWaveCapped(u8 mask, u8 total)
+{
+    u8 buf[5], nc = 0, b, idx, mf;
+    if (!mask) return ENEMY_TYPE_BASIC;
+    mf = WaveMaxFastAllowed();
+    for (b = 0; b < 5; b++)
+    {
+        if (!(mask & (1u << b))) continue;
+        if (b == ENEMY_TYPE_FAST && total > mf) continue;
+        if (b == ENEMY_TYPE_HEAVY && total > WAVE_MAX_HEAVY_PER_WAVE) continue;
+        buf[nc++] = b;
+    }
+    if (!nc) return ENEMY_TYPE_BASIC;
+    idx = (u8)((Math_GetRandom8() ^ (g_WavesCleared << 1) ^ g_Level) % nc);
+    return buf[idx];
+}
+
 // 1:1 CPC: buildWaveTypePlan
 static void BuildWaveTypePlan(u8 total, u8 mask)
 {
@@ -855,7 +922,7 @@ static void BuildWaveTypePlan(u8 total, u8 mask)
     if (st != 255)
         t = st;
     else
-        t = PickTypeForWave(mask);
+        t = PickTypeForWaveCapped(mask, total);
     for (slot = 0; slot < total; slot++)
         g_WaveSlotType[slot] = t;
     g_WaveBonusBase = g_EnemyScore[t];
@@ -894,12 +961,31 @@ static void BuildWaveLayoutRank(u8 n)
     }
 }
 
+static void BuildWaveLayoutFastRank(u8 n)
+{
+    BuildWaveLayoutRank(n);
+    if (n == 3)
+    {
+        g_WaveSlotY[0] = 0;
+        g_WaveSlotY[1] = 20;
+        g_WaveSlotY[2] = 20;
+    }
+    else if (n == 5)
+    {
+        g_WaveSlotY[0] = 20;
+        g_WaveSlotY[1] = 20;
+        g_WaveSlotY[2] = 20;
+        g_WaveSlotY[3] = 0;
+        g_WaveSlotY[4] = 0;
+    }
+}
+
 // 1:1 CPC: buildWaveSlotLayoutIndian
 static void BuildWaveLayoutIndian(u8 n)
 {
     u8 i, x;
     x = (u8)(GAME_X0 + MOD_POW2(Math_GetRandom8(), 128));
-    if (x > GAME_X1 - ENEMY_W) x = GAME_X1 - ENEMY_W;
+    if (x > GAME_X1 - ENEMY_W) x = (u8)(GAME_X1 - ENEMY_W);
     for (i = 0; i < n; i++)
     {
         g_WaveSlotX[i] = x;
@@ -923,7 +1009,17 @@ static void SpawnSingleEnemy(u8 x, u8 y, u8 patt, i8 vx, u8 type)
         g_Enemies[i].vy       = g_EnemySpeedY[type];
         g_Enemies[i].zig_timer = 6;
         g_Enemies[i].health   = (type == ENEMY_TYPE_HEAVY || type == ENEMY_TYPE_BOMBER) ? 3 : 1;
-        g_Enemies[i].fire_cd  = (u8)(ENEMYSHOT_COOLDOWN + (g_WaveSpawned << 1));
+        g_Enemies[i].boss_hp_max = 0;
+        g_Enemies[i].boss_vosc = 0;
+        if (type == ENEMY_TYPE_BOMBER)
+        {
+            g_Enemies[i].fire_cd = (u8)(8u + (Math_GetRandom8() & 7u));
+            g_Enemies[i].pattern = (u8)(Math_GetRandom8() & 1u);
+        }
+        else
+            g_Enemies[i].fire_cd = 0;
+        if (type == ENEMY_TYPE_DIVER) g_EnemyShots[i].cd = (u8)(Math_GetRandom8() & 1u);
+        else g_EnemyShots[i].cd = (u8)((g_WaveSpawned << 1) + (Math_GetRandom8() & 7u));
         return;
     }
 }
@@ -983,22 +1079,24 @@ static void StartNewWave()
         {
             if (!g_Enemies[i].active)
             {
-                u8 lane = Math_GetRandom8() % 3u;
-                g_Enemies[i].boss_lane_x0 = GAME_X0 + lane * BOSS_LANE_W;
-                g_Enemies[i].x       = g_Enemies[i].boss_lane_x0 + BOSS_LANE_W/2 - ENEMY_BOSS_W/2;
+                g_BossLaneIdx = 1;
+                g_Enemies[i].boss_lane_x0 = (u8)(GAME_X0 + (GAME_W - ENEMY_BOSS_W) / 2);
+                g_Enemies[i].x       = g_Enemies[i].boss_lane_x0;
                 g_Enemies[i].y       = 18;
                 g_Enemies[i].active  = 1;
                 g_Enemies[i].type    = ENEMY_TYPE_BOSS;
                 g_Enemies[i].health  = g_BossTierTable[tier].hp;
+                g_Enemies[i].boss_hp_max = g_Enemies[i].health;
                 g_Enemies[i].vy      = g_BossTierTable[tier].vy;
-                g_Enemies[i].vx      = 0;
-                g_Enemies[i].pattern = PATT_STRAIGHT;
+                g_Enemies[i].vx      = 1;
+                g_Enemies[i].pattern = (u8)(Math_GetRandom8() & 7u);
                 g_Enemies[i].zig_timer = (u8)(8u + (Math_GetRandom8() & 7u));
                 g_Enemies[i].fire_cd = g_BossTierTable[tier].fire_cd;
+                g_Enemies[i].boss_vosc = BOSS_VOSC_DESC;
                 break;
             }
         }
-        g_WaveBonusBase = ENEMY_SCORE_BOSS;
+        g_WaveBonusBase = 0;
         g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
         sfxLevelUp();  // So d'avís de boss
         g_HudDirty = 1;
@@ -1007,33 +1105,37 @@ static void StartNewWave()
     if (cfg->flags & LCFG_F_BOSS2)
     {
         // Dual boss (Level 25)
-        u8 lane = Math_GetRandom8() % 3u;
         g_WaveTotal = 2;
-        tier = 4;
+        tier = 3; // CPC final dual: HP per boss like single level 20
         g_WaveSpawned = 2;
+        g_BossLaneIdx = (Math_GetRandom8() & 1u) ? 0 : 2;
         
         // Spawn two bosses
         for (i = 0; i < MAX_ENEMIES && g_WaveSpawned > 0; i++)
         {
             if (!g_Enemies[i].active)
             {
-                g_Enemies[i].boss_lane_x0 = GAME_X0 + lane * BOSS_LANE_W;
-                g_Enemies[i].x       = g_Enemies[i].boss_lane_x0 + BOSS_LANE_W/2 - ENEMY_BOSS_W/2;
+                if (g_BossLaneIdx == 0) g_Enemies[i].boss_lane_x0 = (u8)(GAME_X0 + 24);
+                else if (g_BossLaneIdx == 2) g_Enemies[i].boss_lane_x0 = (u8)(GAME_X1 - ENEMY_BOSS_W - 24);
+                else g_Enemies[i].boss_lane_x0 = (u8)(GAME_X0 + (GAME_W - ENEMY_BOSS_W) / 2);
+                g_Enemies[i].x       = g_Enemies[i].boss_lane_x0;
                 g_Enemies[i].y       = 18;
                 g_Enemies[i].active  = 1;
                 g_Enemies[i].type    = ENEMY_TYPE_BOSS;
                 g_Enemies[i].health  = g_BossTierTable[tier].hp;
+                g_Enemies[i].boss_hp_max = g_Enemies[i].health;
                 g_Enemies[i].vy      = g_BossTierTable[tier].vy;
-                g_Enemies[i].vx      = 0;
-                g_Enemies[i].pattern = PATT_STRAIGHT;
+                g_Enemies[i].vx      = 1;
+                g_Enemies[i].pattern = (u8)(Math_GetRandom8() & 7u);
                 g_Enemies[i].zig_timer = (u8)(8u + (Math_GetRandom8() & 7u));
                 g_Enemies[i].fire_cd = g_BossTierTable[tier].fire_cd;
-                lane = (lane + 1u) % 3u;  // Next lane for second boss
+                g_Enemies[i].boss_vosc = BOSS_VOSC_DESC;
+                g_BossLaneIdx = (u8)(2u - g_BossLaneIdx);
                 g_WaveSpawned--;
             }
         }
         g_WaveSpawned = 2;
-        g_WaveBonusBase = ENEMY_SCORE_BOSS;
+        g_WaveBonusBase = 0;
         g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
         sfxLevelUp();
         return;
@@ -1053,14 +1155,27 @@ static void StartNewWave()
 
     BuildWaveTypePlan(total, mask);
 
-    // Layout segons tipus
-    if (g_WaveMode == WAVE_MODE_INDIAN || g_WaveSlotType[0] == ENEMY_TYPE_DIVER)
+    if (g_WaveSlotType[0] == ENEMY_TYPE_DIVER)
     {
         g_WaveMode = WAVE_MODE_INDIAN;
-        BuildWaveLayoutIndian(total);
+        if (g_WaveTotal < DIVER_WAVE_MIN) g_WaveTotal = DIVER_WAVE_MIN;
+        if (g_WaveTotal > DIVER_WAVE_MAX) g_WaveTotal = DIVER_WAVE_MAX;
+        BuildWaveTypePlan(g_WaveTotal, mask);
     }
+    if (g_WaveSlotType[0] == ENEMY_TYPE_HEAVY && g_WaveTotal > HeavyWaveCapForLevel())
+        g_WaveTotal = HeavyWaveCapForLevel();
+    if (g_WaveSlotType[0] == ENEMY_TYPE_BOMBER && g_WaveTotal > BomberWaveCapForLevel())
+        g_WaveTotal = BomberWaveCapForLevel();
+
+    // Layout segons tipus; MSX: mai mes de 2 enemics per fila.
+    if (g_WaveMode == WAVE_MODE_INDIAN)
+    {
+        BuildWaveLayoutIndian(g_WaveTotal);
+    }
+    else if (g_WaveSlotType[0] == ENEMY_TYPE_FAST)
+        BuildWaveLayoutFastRank(g_WaveTotal);
     else
-        BuildWaveLayoutRank(total);
+        BuildWaveLayoutRank(g_WaveTotal);
 
     // Patró i vx unificats per tota l'onada
     GetPatternForType(g_WaveSlotType[0], &g_WaveUnifiedPatt, &g_WaveUnifiedVX);
@@ -1093,10 +1208,11 @@ static void UpdateWaveBonus()
     // Tota l'onada eliminada: suma bonus
     if (g_WaveKilled == g_WaveTotal)
     {
-        u16 bonus = (u16)(g_WaveBonusBase * g_WaveTotal);
-        g_Score += bonus;
-        if (g_Score > 65535u) g_Score = 65535u;
-        g_HudDirty = 1;
+        u16 bonus = 0;
+        u8 wk;
+        for (wk = 0; wk < g_WaveTotal; wk++)
+            bonus = (u16)(bonus + g_WaveBonusBase);
+        AddScore(bonus);
         g_BonusDisplayCnt = 30;  // Mostra "XN" cada cop que es compleix una wave
     }
 
@@ -1107,7 +1223,11 @@ static void UpdateWaveBonus()
         if (g_WavesCleared >= cfg->waves)
         {
             g_WavesCleared = 0;
-            if (g_Level < ENDGAME_FINAL_LEVEL)
+            if (g_Level >= ENDGAME_FINAL_LEVEL)
+            {
+                EnterPostGame(1);
+            }
+            else
             {
                 g_Level++;
                 sfxLevelUp();
@@ -1121,8 +1241,20 @@ static void UpdateWaveBonus()
 void InitEnemies()
 {
     u8 i;
-    for (i = 0; i < MAX_ENEMIES;     i++) g_Enemies[i].active    = 0;
-    for (i = 0; i < MAX_ENEMY_SHOTS; i++) { g_EnemyShots[i].active = 0; g_EnemyShots[i].pattern = 12; g_EnemyShots[i].vy = ENEMYSHOT_SPEED_Y; }
+    for (i = 0; i < MAX_ENEMIES;     i++)
+    {
+        g_Enemies[i].active = 0;
+        g_Enemies[i].boss_hp_max = 0;
+        g_Enemies[i].boss_vosc = 0;
+    }
+    for (i = 0; i < MAX_ENEMY_SHOTS; i++)
+    {
+        g_EnemyShots[i].active = 0;
+        g_EnemyShots[i].pattern = 12;
+        g_EnemyShots[i].vy = ENEMYSHOT_SPEED_Y;
+        g_EnemyShots[i].cd = (u8)(i * ENEMYSHOT_STAGGER);
+        g_EnemyShots[i].type = ENEMYSHOT_TYPE_BULLET;
+    }
     for (i = 0; i < MAX_EXPLOSIONS;  i++) g_Explosions[i].active = 0;
     // 1:1 CPC: initEnemies wave state
     g_SpawnTimer    = SPAWN_FIRST_DELAY;
@@ -1133,17 +1265,82 @@ void InitEnemies()
     g_WaveBonusBase = 10;
     g_WaveMode      = WAVE_MODE_RANK;
     g_WaveIndianDelay = 0;
+    g_DualBossAimLock = 0;
 }
 
 // CPC: enemyShotAimVX - apunta cap a la nau
 static i8 enemyShotAimVX(u8 sx)
 {
-    i16 dx = (i16)g_ShipX - (i16)sx;
-    if      (dx <= -12) return -ENEMYSHOT_VX_FAST;
-    else if (dx <=  -4) return -ENEMYSHOT_VX_SLOW;
-    else if (dx >=  12) return  ENEMYSHOT_VX_FAST;
-    else if (dx >=   4) return  ENEMYSHOT_VX_SLOW;
+    i16 dx = (i16)(g_ShipX + (SHIP_W >> 1)) - (i16)sx;
+    if      (dx <= -10) return -ENEMYSHOT_VX_FAST;
+    else if (dx <=  -3) return -ENEMYSHOT_VX_SLOW;
+    else if (dx >=  10) return  ENEMYSHOT_VX_FAST;
+    else if (dx >=   3) return  ENEMYSHOT_VX_SLOW;
+    else if (dx < 0) return -ENEMYSHOT_VX_SLOW;
+    else if (dx > 0) return ENEMYSHOT_VX_SLOW;
     return 0;
+}
+
+static i8 enemyShotAimVXDiver(u8 sx)
+{
+    i16 dx = (i16)(g_ShipX + (SHIP_W >> 1)) - (i16)sx;
+    if      (dx <= -16) return -ENEMYSHOT_VX_SLOW;
+    else if (dx <=  -6) return -1;
+    else if (dx >=  16) return  ENEMYSHOT_VX_SLOW;
+    else if (dx >=   6) return  1;
+    else if (dx < 0) return -1;
+    else if (dx > 0) return 1;
+    return 0;
+}
+
+static i8 enemyShotAimVXBoss(u8 sx)
+{
+    i16 dx = (i16)g_ShipX - (i16)sx;
+    if      (dx <= -16) return -ENEMYSHOT_VX_FAST;
+    else if (dx <=  -6) return -ENEMYSHOT_VX_SLOW;
+    else if (dx >=  16) return  ENEMYSHOT_VX_FAST;
+    else if (dx >=   6) return  ENEMYSHOT_VX_SLOW;
+    return 0;
+}
+
+static u8 AllocEnemyShotSlot()
+{
+    u8 k;
+    for (k = 0; k < MAX_ENEMY_SHOTS; k++)
+        if (!g_EnemyShots[k].active) return k;
+    return 255;
+}
+
+static u8 HeavyShotCooldown()
+{
+    if (g_Level >= 21) return (u8)(5u + (Math_GetRandom8() & 3u));
+    if (g_Level >= 16) return (u8)(6u + (Math_GetRandom8() & 3u));
+    if (g_Level >= 11) return (u8)(7u + (Math_GetRandom8() & 4u));
+    return (u8)(8u + (Math_GetRandom8() & 5u));
+}
+
+static u8 DiverShotCooldown()
+{
+    if (g_Level >= 21) return (u8)(5u + (Math_GetRandom8() & 2u));
+    if (g_Level >= 16) return (u8)(6u + (Math_GetRandom8() & 2u));
+    if (g_Level >= 11) return (u8)(7u + (Math_GetRandom8() & 2u));
+    return (u8)(8u + (Math_GetRandom8() & 3u));
+}
+
+static u8 BossTierFromLevel(u8 lv)
+{
+    if (lv >= 25) return 4;
+    if (lv < 10) return 0;
+    if (lv < 15) return 1;
+    if (lv < 20) return 2;
+    return 3;
+}
+
+static u8 BossBulletVyFromTier(u8 tier)
+{
+    u8 v = (u8)(ENEMYSHOT_SPEED_Y + tier);
+    if (tier >= 3) v++;
+    return v;
 }
 
 void SpawnEnemyShot(u8 ex, u8 ey, u8 enemy_type)
@@ -1165,60 +1362,117 @@ void SpawnEnemyShot(u8 ex, u8 ey, u8 enemy_type)
     }
 }
 
-// Boss shots: alterna 2 aimed (CPC) o 3 en ventall real
-static void SpawnBossShots(u8 ex, u8 ey, u8 num_bullets)
+static void SpawnEnemyBullet(u8 xspawn, u8 yspawn, i8 vx, u8 vy, u8 type)
 {
-    u8 tier = (g_Level >= 25) ? 4 : ((g_Level - 1) / 5);
-    u8 bvy = ENEMYSHOT_SPEED_Y + tier/2;
-    if (tier >= 3) bvy += 2;
-    
-    u8 is_3shot = (Math_GetRandom8() & 1) && num_bullets > 2;
-    u8 n = is_3shot ? 3 : 2;
-    
-    u8 s, spawned = 0;
-    for (s = 0; s < n && spawned < MAX_ENEMY_SHOTS; s++)
-    {
-        u8 k;
-        for (k = 0; k < MAX_ENEMY_SHOTS; k++)
-        {
-            if (!g_EnemyShots[k].active)
-            {
-                i16 xx;
-                u8 bx = (u8)(ex + ENEMY_BOSS_W / 2);
-                if (is_3shot)
-                {
-                    // 3 fan: posicio ±3 amb VELOCITAT FIXA (no apunten)
-                    static const i8 fan_vx[3] = {-1, 0, 1};
-                    if (s == 0) xx = (i16)bx - 3;
-                    else if (s == 1) xx = (i16)bx;
-                    else xx = (i16)bx + 3;
-                    if (xx < GAME_X0) xx = GAME_X0;
-                    if (xx > GAME_X1) xx = GAME_X1;
-                    g_EnemyShots[k].x       = (u8)xx;
-                    g_EnemyShots[k].y       = ey + ENEMY_BOSS_H;
-                    g_EnemyShots[k].vx      = fan_vx[s];
-                }
-                else
-                {
-                    // 2 aimed: CPC style
-                    xx = (i16)bx + (s ? 3 : -3);
-                    if (xx < GAME_X0) xx = GAME_X0;
-                    if (xx > GAME_X1) xx = GAME_X1;
-                    g_EnemyShots[k].x       = (u8)xx;
-                    g_EnemyShots[k].y       = ey + ENEMY_BOSS_H;
-                    g_EnemyShots[k].vx      = enemyShotAimVX((u8)xx);
-                }
-                g_EnemyShots[k].vy      = bvy;
-                g_EnemyShots[k].vy      = bvy;
-                g_EnemyShots[k].pattern = 12;
-                g_EnemyShots[k].active  = 1;
-                spawned++;
-                break;
-            }
-        }
-    }
+    u8 k = AllocEnemyShotSlot();
+    i16 xx = xspawn;
+    if (k == 255) return;
+    if (xx < GAME_X0) xx = GAME_X0;
+    if (xx > (i16)(GAME_X1 - ENEMYSHOT_W)) xx = (i16)(GAME_X1 - ENEMYSHOT_W);
+    g_EnemyShots[k].active = 1;
+    g_EnemyShots[k].x = (u8)xx;
+    g_EnemyShots[k].y = yspawn;
+    g_EnemyShots[k].vx = vx;
+    g_EnemyShots[k].vy = vy;
+    g_EnemyShots[k].cd = 0;
+    g_EnemyShots[k].type = type;
+    g_EnemyShots[k].pattern = (type == ENEMYSHOT_TYPE_BOMB) ? 88 : 12;
+    sfxEnemyShot();
 }
 
+static void BomberFireVolley(u8 i)
+{
+    u8 bx = (u8)(g_Enemies[i].x + ENEMY_W / 2 - 1);
+    u8 by = (u8)(g_Enemies[i].y + ENEMY_H);
+    i16 dxShip = (i16)g_ShipX - (i16)bx;
+    if (g_Enemies[i].pattern & 1u)
+    {
+        SpawnEnemyBullet((u8)(bx - 1u), by, -1, (u8)(ENEMYSHOT_SPEED_Y - 1u), ENEMYSHOT_TYPE_BOMB);
+        SpawnEnemyBullet((u8)(bx + 1u), by,  1, (u8)(ENEMYSHOT_SPEED_Y - 1u), ENEMYSHOT_TYPE_BOMB);
+    }
+    else
+    {
+        SpawnEnemyBullet(bx, by, enemyShotAimVXBoss(bx), ENEMYSHOT_SPEED_Y, ENEMYSHOT_TYPE_BOMB);
+        if (dxShip >= -8 && dxShip <= 8)
+            SpawnEnemyBullet((u8)(bx + 1u), by, 0, (u8)(ENEMYSHOT_SPEED_Y + 1u), ENEMYSHOT_TYPE_BOMB);
+    }
+    g_Enemies[i].pattern ^= 1u;
+    g_Enemies[i].fire_cd = (u8)(13u + (Math_GetRandom8() & 7u));
+}
+
+static u8 BossTryAimedShot(u8 dual_mode, u8 x, u8 y, i8 vx, u8 vy)
+{
+    if (dual_mode)
+    {
+        if (g_DualBossAimLock) return 0;
+        g_DualBossAimLock = 10;
+        if (vy > 4) vy--;
+    }
+    SpawnEnemyBullet(x, y, vx, vy, ENEMYSHOT_TYPE_BULLET);
+    return 1;
+}
+
+// Boss shots: alterna 2 aimed (CPC) o 3 en ventall real
+static u8 CountActiveBosses()
+{
+    u8 i, n = 0;
+    for (i = 0; i < MAX_ENEMIES; i++)
+        if (g_Enemies[i].active && g_Enemies[i].type == ENEMY_TYPE_BOSS) n++;
+    return n;
+}
+
+static void BossFireVolley(u8 i)
+{
+    u8 pat = (u8)(g_Enemies[i].pattern & 3u);
+    u8 tier = BossTierFromLevel(g_Level);
+    u8 bx = (u8)(g_Enemies[i].x + ENEMY_BOSS_W / 2);
+    u8 by = (u8)(g_Enemies[i].y + ENEMY_BOSS_H);
+    u8 bvy = BossBulletVyFromTier(tier);
+    u8 dual_mode = (CountActiveBosses() >= 2u) ? 1u : 0u;
+    u8 bvyFan = (u8)((bvy > 6u) ? (bvy - 2u) : (bvy - 1u));
+    u8 cd, ti;
+    i16 dxShip = (i16)g_ShipX - (i16)bx;
+    if (bvyFan < 4) bvyFan = 4;
+    g_Enemies[i].pattern = (u8)((pat + 1u) & 3u);
+
+    switch (pat)
+    {
+        case 0:
+            if (BossTryAimedShot(dual_mode, bx, by, enemyShotAimVXBoss(bx), bvy))
+            {
+                if (dxShip >= -5 && dxShip <= 5)
+                    SpawnEnemyBullet((u8)(bx + 1u), by, 0, (u8)(bvy + 1u), ENEMYSHOT_TYPE_BULLET);
+                else if (tier >= 2)
+                    BossTryAimedShot(dual_mode, (u8)(bx - 1u), by, enemyShotAimVXBoss((u8)(bx - 1u)), bvy);
+            }
+            break;
+        case 1:
+            SpawnEnemyBullet((u8)(bx - 4u), by, -1, bvyFan, ENEMYSHOT_TYPE_BULLET);
+            SpawnEnemyBullet((u8)(bx + 4u), by,  1, bvyFan, ENEMYSHOT_TYPE_BULLET);
+            if (tier >= 2) SpawnEnemyBullet(bx, by, 0, (u8)(bvyFan + 1u), ENEMYSHOT_TYPE_BULLET);
+            break;
+        case 2:
+            SpawnEnemyBullet((u8)(bx - 5u), by, -1, bvyFan, ENEMYSHOT_TYPE_BULLET);
+            SpawnEnemyBullet(bx, by, 0, bvyFan, ENEMYSHOT_TYPE_BULLET);
+            SpawnEnemyBullet((u8)(bx + 5u), by, 1, bvyFan, ENEMYSHOT_TYPE_BULLET);
+            if (tier >= 2) BossTryAimedShot(dual_mode, bx, by, enemyShotAimVXBoss(bx), (u8)(bvyFan + 1u));
+            if (tier >= 3) SpawnEnemyBullet((u8)(bx + 2u), by, -1, (u8)(bvyFan + 1u), ENEMYSHOT_TYPE_BULLET);
+            break;
+        default:
+            BossTryAimedShot(dual_mode, bx, by, enemyShotAimVXBoss(bx), bvy);
+            SpawnEnemyBullet((u8)(bx + 8u), by, -1, bvyFan, ENEMYSHOT_TYPE_BULLET);
+            if (dxShip >= -7 && dxShip <= 7) SpawnEnemyBullet((u8)(bx - 7u), by, 1, bvyFan, ENEMYSHOT_TYPE_BULLET);
+            if (tier >= 3) BossTryAimedShot(dual_mode, (u8)(bx - 2u), by, enemyShotAimVXBoss((u8)(bx - 2u)), bvyFan);
+            break;
+    }
+
+    ti = tier;
+    if (ti > 3) ti = 3;
+    cd = (u8)(g_BossFireCdBase[ti] + (Math_GetRandom8() & g_BossFireCdRandMask[ti]));
+    if (cd < 7) cd = 7;
+    if (tier >= 3 && pat == 2) cd = (u8)(cd + 3u);
+    g_Enemies[i].fire_cd = cd;
+}
 void SpawnEnemyShot(u8 ex, u8 ey, u8 enemy_type);
 
 void UpdateEnemies()
@@ -1237,18 +1491,43 @@ void UpdateEnemies()
         // Boss-specific behavior
         if (g_Enemies[i].type == ENEMY_TYPE_BOSS)
         {
-            // 1:1 CPC: move boss with lane system
-            u8 tw = BOSS_LANE_W;
-            u8 xmn = g_Enemies[i].boss_lane_x0;
-            u8 xmx = (u8)(xmn + tw - ENEMY_BOSS_W);
-            if (xmx > (u8)(GAME_X1 - ENEMY_BOSS_W)) xmx = (u8)(GAME_X1 - ENEMY_BOSS_W);
-            if (xmn < GAME_X0) xmn = GAME_X0;
-            
-            // Dive to hold Y position (CPC 1:1)
-            if (g_Enemies[i].y < BOSS_HOLD_Y)
+            u8 xmn = GAME_X0;
+            u8 xmx = (u8)(GAME_X1 - ENEMY_BOSS_W);
+            u8 pivot = g_Enemies[i].boss_lane_x0;
+            u8 hold = BOSS_HOLD_Y;
+            u8 ymin = (u8)(hold - BOSS_Y_OSC);
+            u8 dual_mode = (CountActiveBosses() >= 2u) ? 1u : 0u;
+            i16 nxx, dxp;
+            tier = BossTierFromLevel(g_Level);
+            if (dual_mode)
             {
-                g_Enemies[i].y += g_Enemies[i].vy;
-                if (g_Enemies[i].y > BOSS_HOLD_Y) g_Enemies[i].y = BOSS_HOLD_Y;
+                i16 lx = (i16)pivot - BOSS_DUAL_LANE_HALF;
+                i16 rx = (i16)pivot + BOSS_DUAL_LANE_HALF;
+                if (lx < GAME_X0) lx = GAME_X0;
+                if (rx > (i16)(GAME_X1 - ENEMY_BOSS_W)) rx = (i16)(GAME_X1 - ENEMY_BOSS_W);
+                xmn = (u8)lx;
+                xmx = (u8)rx;
+            }
+            
+            if (ymin < GAME_Y0 + 4u) ymin = GAME_Y0 + 4u;
+            if (g_Enemies[i].boss_vosc == BOSS_VOSC_DESC)
+            {
+                if (g_Enemies[i].y < hold)
+                {
+                    g_Enemies[i].y = (u8)(g_Enemies[i].y + g_Enemies[i].vy);
+                    if (g_Enemies[i].y > hold) g_Enemies[i].y = hold;
+                }
+                if (g_Enemies[i].y >= hold) g_Enemies[i].boss_vosc = BOSS_VOSC_UP;
+            }
+            else if (g_Enemies[i].boss_vosc == BOSS_VOSC_UP)
+            {
+                if (g_Enemies[i].y > ymin) g_Enemies[i].y--;
+                else g_Enemies[i].boss_vosc = BOSS_VOSC_DOWN;
+            }
+            else
+            {
+                if (g_Enemies[i].y < hold) g_Enemies[i].y++;
+                else g_Enemies[i].boss_vosc = BOSS_VOSC_UP;
             }
             
             // CPC-style random lateral oscillation
@@ -1257,48 +1536,32 @@ void UpdateEnemies()
             else
             {
                 u8 r;
-                g_Enemies[i].zig_timer = (u8)(10u + (Math_GetRandom8() & 15u));
+                if (tier >= 3) g_Enemies[i].zig_timer = (u8)(6u + (Math_GetRandom8() & 7u));
+                else if (tier == 2) g_Enemies[i].zig_timer = (u8)(7u + (Math_GetRandom8() & 7u));
+                else if (tier == 1) g_Enemies[i].zig_timer = (u8)(8u + (Math_GetRandom8() & 7u));
+                else g_Enemies[i].zig_timer = (u8)(8u + (Math_GetRandom8() & 11u));
                 r = Math_GetRandom8() & 7u;
-                if (r < 2u)
-                    g_Enemies[i].vx = (i8)-g_Enemies[i].vx;  // reverse
-                else if (r < 4u)
+                if (tier >= 2)
                 {
-                    if (g_Enemies[i].vx)
-                        g_Enemies[i].vx = 0;
-                    else
-                        g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? (i8)1 : (i8)-1;
-                }
-                else if (r < 6u)
-                {
-                    if (g_Enemies[i].vx < 0)
-                        g_Enemies[i].vx = -2;
-                    else if (g_Enemies[i].vx > 0)
-                        g_Enemies[i].vx = 2;
-                    else
-                        g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? (i8)1 : (i8)-1;
+                    if (r < 4u) g_Enemies[i].vx = (g_Enemies[i].vx < 0) ? -2 : 2;
+                    else g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? 2 : -2;
                 }
                 else
-                    g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? (i8)1 : (i8)-1;
+                {
+                    if (r < 3u) g_Enemies[i].vx = (g_Enemies[i].vx < 0) ? -2 : 2;
+                    else if (r < 6u) g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? 1 : -1;
+                    else g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? 2 : -2;
+                }
+                if (!g_Enemies[i].vx) g_Enemies[i].vx = 1;
             }
             
-            // Move and constrain to lane
-            {
-                i16 nxx = (i16)g_Enemies[i].x + (i16)g_Enemies[i].vx;
-                if (nxx < (i16)xmn)
-                {
-                    g_Enemies[i].x = xmn;
-                    g_Enemies[i].vx = (i8)-g_Enemies[i].vx;
-                    if (!g_Enemies[i].vx) g_Enemies[i].vx = 1;
-                }
-                else if (nxx > (i16)xmx)
-                {
-                    g_Enemies[i].x = xmx;
-                    g_Enemies[i].vx = (i8)-g_Enemies[i].vx;
-                    if (!g_Enemies[i].vx) g_Enemies[i].vx = -1;
-                }
-                else
-                    g_Enemies[i].x = (u8)nxx;
-            }
+            dxp = (i16)pivot - (i16)g_Enemies[i].x;
+            if (dxp > 10 && g_Enemies[i].vx < 2) g_Enemies[i].vx++;
+            else if (dxp < -10 && g_Enemies[i].vx > -2) g_Enemies[i].vx--;
+            nxx = (i16)g_Enemies[i].x + (i16)g_Enemies[i].vx;
+            if (nxx < (i16)xmn) { g_Enemies[i].x = xmn; g_Enemies[i].vx = (g_Enemies[i].vx < 0) ? 2 : 1; }
+            else if (nxx > (i16)xmx) { g_Enemies[i].x = xmx; g_Enemies[i].vx = (g_Enemies[i].vx > 0) ? -2 : -1; }
+            else g_Enemies[i].x = (u8)nxx;
             
             // Boss firing: determine tier to get bullet count
             tier = (g_Level >= 25) ? 4 : ((g_Level - 1) / 5);
@@ -1306,12 +1569,7 @@ void UpdateEnemies()
                 g_Enemies[i].fire_cd--;
             else 
             { 
-                SpawnBossShots(g_Enemies[i].x, g_Enemies[i].y, g_BossTierTable[tier].num_bullets);
-                sfxEnemyShot();
-                // CPC: cooldown AMPLI per crear espais jugables (50fps)
-                u8 cd = (u8)(15u + (Math_GetRandom8() & 15u) - (tier * 2u));
-                if (cd < 6u) cd = 6u;
-                g_Enemies[i].fire_cd = cd;
+                BossFireVolley(i);
             }
         }
         else
@@ -1325,7 +1583,7 @@ void UpdateEnemies()
                 else { g_Enemies[i].zig_timer = 6; g_Enemies[i].vx = -g_Enemies[i].vx; }
                 g_Enemies[i].x = (u8)((i8)g_Enemies[i].x + g_Enemies[i].vx);
                 if (g_Enemies[i].x < GAME_X0)        g_Enemies[i].x = GAME_X0;
-                if (g_Enemies[i].x > GAME_X1-ENEMY_W) g_Enemies[i].x = GAME_X1-ENEMY_W;
+                if (g_Enemies[i].x > GAME_X1-ENEMY_W) g_Enemies[i].x = (u8)(GAME_X1-ENEMY_W);
             }
             else if (g_Enemies[i].pattern == PATT_DIAGONAL)
             {
@@ -1334,8 +1592,57 @@ void UpdateEnemies()
                 else g_Enemies[i].x = (u8)((i8)g_Enemies[i].x + g_Enemies[i].vx);
             }
 
-            if (g_Enemies[i].fire_cd > 0) g_Enemies[i].fire_cd--;
-            else { SpawnEnemyShot(g_Enemies[i].x, g_Enemies[i].y, g_Enemies[i].type); sfxEnemyShot(); g_Enemies[i].fire_cd = ENEMYSHOT_COOLDOWN; }
+            if (g_Enemies[i].type == ENEMY_TYPE_BOMBER)
+            {
+                if (g_Enemies[i].fire_cd) g_Enemies[i].fire_cd--;
+                else BomberFireVolley(i);
+            }
+            else if (g_Enemies[i].type == ENEMY_TYPE_HEAVY)
+            {
+                if (!g_EnemyShots[i].cd)
+                {
+                    u8 k = AllocEnemyShotSlot();
+                    if (k != 255)
+                    {
+                        u8 bx = (u8)(g_Enemies[i].x + ENEMY_W / 2 - 1);
+                        g_EnemyShots[k].active = 1;
+                        g_EnemyShots[k].x = bx;
+                        g_EnemyShots[k].y = (u8)(g_Enemies[i].y + ENEMY_H);
+                        g_EnemyShots[k].vx = enemyShotAimVX(bx);
+                        g_EnemyShots[k].vy = ENEMYSHOT_SPEED_Y;
+                        g_EnemyShots[k].pattern = 12;
+                        g_EnemyShots[k].type = ENEMYSHOT_TYPE_BULLET;
+                        g_EnemyShots[k].cd = 0;
+                        g_EnemyShots[i].cd = HeavyShotCooldown();
+                        sfxEnemyShot();
+                    }
+                }
+            }
+            else
+            {
+                if (!g_EnemyShots[i].active && !g_EnemyShots[i].cd)
+                {
+                    u8 bx = (u8)(g_Enemies[i].x + ENEMY_W / 2 - 1);
+                    g_EnemyShots[i].active = 1;
+                    g_EnemyShots[i].x = bx;
+                    g_EnemyShots[i].y = (u8)(g_Enemies[i].y + ENEMY_H);
+                    g_EnemyShots[i].pattern = 12;
+                    g_EnemyShots[i].type = ENEMYSHOT_TYPE_BULLET;
+                    if (g_Enemies[i].type == ENEMY_TYPE_DIVER)
+                    {
+                        g_EnemyShots[i].vx = enemyShotAimVXDiver(bx);
+                        g_EnemyShots[i].vy = (u8)(ENEMYSHOT_SPEED_Y + 1u);
+                        g_EnemyShots[i].cd = DiverShotCooldown();
+                    }
+                    else
+                    {
+                        g_EnemyShots[i].vx = enemyShotAimVX(bx);
+                        g_EnemyShots[i].vy = ENEMYSHOT_SPEED_Y;
+                        g_EnemyShots[i].cd = (u8)(ENEMYSHOT_COOLDOWN + (i << 1));
+                    }
+                    sfxEnemyShot();
+                }
+            }
         }
 
         if (g_Enemies[i].y >= SCREEN_H) { g_Enemies[i].active = 0; continue; }
@@ -1344,6 +1651,7 @@ void UpdateEnemies()
     // Actualitza dispars enemics
     for (i = 0; i < MAX_ENEMY_SHOTS; i++)
     {
+        if (g_EnemyShots[i].cd) g_EnemyShots[i].cd--;
         if (!g_EnemyShots[i].active) continue;
         g_EnemyShots[i].y = (u8)(g_EnemyShots[i].y + g_EnemyShots[i].vy);
         g_EnemyShots[i].x  = (u8)((i8)g_EnemyShots[i].x + g_EnemyShots[i].vx);
@@ -1557,7 +1865,7 @@ void RespawnShip()
     g_ShipInvulTimer = 0;
     g_FireCooldown   = 0;
     g_ShipX          = SHIP_SPAWN_X;
-    g_ShipY          = SHIP_SPAWN_Y;
+    g_ShipY          = (u8)(SHIP_SPAWN_Y);
     // CPC: clearActiveCombatState - ara aqui per no netejar pantalla durant l'explosio
     for (i = 0; i < MAX_ENEMIES;     i++) g_Enemies[i].active    = 0;
     for (i = 0; i < MAX_SHOTS;       i++) g_Shots[i].active      = 0;
@@ -1588,7 +1896,6 @@ void UpdateShipInvulnerability()
 
 void TriggerShipHit()
 {
-    u8 i;
     // 1:1 CPC: triggerShipHit
     SpawnExplosion(g_ShipX, g_ShipY, EXP_KIND_SHIP);
     sfxShipExplosion();
@@ -1605,14 +1912,6 @@ void TriggerShipHit()
     // NOTA: No netegem enemics aqui - ho fa RespawnShip per veure l'explosio
 }
 
-u8 RectOverlap(u8 x1, u8 y1, u8 w1, u8 h1, u8 x2, u8 y2, u8 w2, u8 h2){
-    if (x1 + w1 <= x2) return 0;
-    if (x2 + w2 <= x1) return 0;
-    if (y1 + h1 <= y2) return 0;
-    if (y2 + h2 <= y1) return 0;
-    return 1;
-}
-// Macro inline (sense CALL/RET) per CheckCollisions
 #define OVERLAP(x1,y1,w1,h1,x2,y2,w2,h2) \
     ((x1)+(w1)>(x2) && (x2)+(w2)>(x1) && (y1)+(h1)>(y2) && (y2)+(h2)>(y1))
 
@@ -1648,11 +1947,9 @@ void CheckCollisions()
                     sfxEnemyExplosion();
                     // Boss scores differently
                     if (g_Enemies[j].type == ENEMY_TYPE_BOSS)
-                        g_Score += ENEMY_SCORE_BOSS;
+                        AddScore(ENEMY_SCORE_BOSS);
                     else
-                        g_Score += g_EnemyScore[g_Enemies[j].type];
-                    if (g_Score > 65535u) g_Score = 65535u;
-                    g_HudDirty = 1;
+                        AddScore(g_EnemyScore[g_Enemies[j].type]);
                 }
                 else
                 {
@@ -1839,38 +2136,38 @@ void RedrawHsInput()
     }
 }
 
-// Menu starfield - 1:1 CPC: 40 estrelles laterals + 12 centrals
+// Menu starfield - keep stars outside text/hline columns because twinkle rewrites tiles
 #define MENU_STAR_N         40
 #define MENU_STAR_CN        12   // estrelles centrals per TOP3/HELP
 #define MENU_STAR_TILE_BASE 168
 #define MENU_TWINKLE_FRAMES 4
 
 static const u8 g_MenuStarX[MENU_STAR_N] = {
-    0x02,0x06,0x04,0x07,0x02,0x05,0x01,0x06,0x04,0x02,
-    0x08,0x05,0x03,0x06,0x04,0x08,0x03,0x07,0x01,0x08,
-    0x1A,0x1E,0x18,0x1C,0x1F,0x1A,0x1D,0x1B,0x1E,0x19,
-    0x1C,0x1A,0x1D,0x1C,0x1E,0x19,0x1F,0x1B,0x18,0x1F
+    0x01,0x02,0x00,0x02,0x01,0x00,0x02,0x01,0x00,0x02,
+    0x01,0x00,0x02,0x01,0x00,0x02,0x01,0x00,0x02,0x01,
+    0x1E,0x1F,0x1D,0x1F,0x1E,0x1D,0x1F,0x1E,0x1D,0x1F,
+    0x1E,0x1D,0x1F,0x1E,0x1D,0x1F,0x1E,0x1D,0x1F,0x1E
 };
 static const u8 g_MenuStarY[MENU_STAR_N] = {
-    0x03,0x05,0x03,0x09,0x07,0x0D,0x0B,0x11,0x0F,0x14,
-    0x13,0x16,0x06,0x08,0x0A,0x0C,0x0E,0x10,0x12,0x14,
-    0x02,0x04,0x06,0x06,0x0A,0x0C,0x0E,0x10,0x12,0x11,
-    0x15,0x16,0x06,0x08,0x0A,0x0C,0x0E,0x10,0x12,0x15
-};
-// Estrelles centrals per TOP3/HELP (zona superior, no solapen text)
-static const u8 g_MenuStarCX[MENU_STAR_CN] = {
-    0x0C,0x12,0x0A,0x11,0x0E,0x14,0x0A,0x0F,0x12,0x13,0x0D,0x15
-};
-static const u8 g_MenuStarCY[MENU_STAR_CN] = {
-    0x02,0x03,0x03,0x03,0x04,0x04,0x04,0x05,0x05,0x07,0x07,0x03
+    0x01,0x03,0x05,0x06,0x08,0x0A,0x0B,0x0D,0x0E,0x0F,
+    0x10,0x12,0x13,0x14,0x15,0x16,0x02,0x07,0x0D,0x15,
+    0x02,0x03,0x05,0x06,0x08,0x0A,0x0B,0x0D,0x0E,0x0F,
+    0x10,0x12,0x13,0x14,0x15,0x16,0x01,0x07,0x0D,0x15
 };
 static const u8 g_MenuStarSeed[MENU_STAR_N] = {
     0,2,1,3,1,0,3,2,0,1,3,2,2,0,3,1,1,2,0,3,
     2,0,3,1,3,2,1,0,2,3,0,1,3,2,0,1,2,3,1,0
 };
+static const u8 g_MenuStarCX[MENU_STAR_CN] = {
+    0x07,0x0A,0x0D,0x10,0x13,0x16,0x08,0x0B,0x11,0x14,0x18,0x1B
+};
+static const u8 g_MenuStarCY[MENU_STAR_CN] = {
+    0x02,0x03,0x04,0x05,0x06,0x07,0x13,0x14,0x15,0x16,0x12,0x14
+};
 static const u8 g_MenuStarCS[MENU_STAR_CN] = {
     0,3,1,2,2,0,3,1,1,2,3,0
 };
+
 
 static u8 g_MenuStarState[MENU_STAR_N];
 static u8 g_MenuStarCState[MENU_STAR_CN];
@@ -1985,44 +2282,15 @@ static const u8 g_LogoTiles[24*8] = {
     0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xEF,0xCF,
 };
 
-// Colors per zona del logo - 1:1 CPC paleta
-// Fila 0 (tiles 0-7):  Dark Blue (4) on Black (1) = 0x41
-// Fila 1 (tiles 8-15): Light Blue (5) on Black (1) = 0x51
-// Fila 2 (tiles 16-23): Medium Green (2) on Black (1) = 0x21
-static const u8 g_LogoColors[24*8] = {
-    0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,
-    0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,
-    0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,
-    0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,
-    0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,
-    0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,
-    0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,
-    0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,
-    0x51,0x51,0x51,0x51,0x51,0x51,0x51,0x51,
-    0x51,0x51,0x51,0x51,0x51,0x51,0x51,0x51,
-    0x51,0x51,0x51,0x51,0x51,0x51,0x51,0x51,
-    0x51,0x51,0x51,0x51,0x51,0x51,0x51,0x51,
-    0x51,0x51,0x51,0x51,0x51,0x51,0x51,0x51,
-    0x51,0x51,0x51,0x51,0x51,0x51,0x51,0x51,
-    0x51,0x51,0x51,0x51,0x51,0x51,0x51,0x51,
-    0x51,0x51,0x51,0x51,0x51,0x51,0x51,0x51,
-    0x21,0x21,0x21,0x21,0x21,0x21,0x21,0x21,
-    0x21,0x21,0x21,0x21,0x21,0x21,0x21,0x21,
-    0x21,0x21,0x21,0x21,0x21,0x21,0x21,0x21,
-    0x21,0x21,0x21,0x21,0x21,0x21,0x21,0x21,
-    0x21,0x21,0x21,0x21,0x21,0x21,0x21,0x21,
-    0x21,0x21,0x21,0x21,0x21,0x21,0x21,0x21,
-    0x21,0x21,0x21,0x21,0x21,0x21,0x21,0x21,
-    0x21,0x21,0x21,0x21,0x21,0x21,0x21,0x21,
-};
-
 void InitLogoTiles()
 {
-    u8 t, bank;
+    u8 t, bank, r;
     for (t = 0; t < 24; t++)
     {
-        const u8* tile  = g_LogoTiles + t * 8;
-        const u8* color = g_LogoColors + t * 8;
+        const u8* tile = g_LogoTiles + t * 8;
+        u8 col = (t < 8) ? 0x41 : (t < 16) ? 0x51 : 0x21;
+        u8 color[8];
+        for (r = 0; r < 8; r++) color[r] = col;
         for (bank = 0; bank < 3; bank++)
         {
             VDP_LoadBankPattern_GM2(tile,  1, bank, LOGO_TILE_BASE + t);
@@ -2334,7 +2602,7 @@ void UpdateMenuInput()
 
  void DrawMenuScreen()
 {
-    u8 k, i;
+    u8 i;
     VDP_FillScreen_GM2(0);
     InitLogoTiles();
     InitHudFontTiles();
@@ -2499,7 +2767,7 @@ void ResetGameSession()
     u8 i;
     // 1:1 CPC: resetGameSession
     g_Score       = 0;
-    g_Lives       = 3;
+    g_Lives       = 2;
     g_Level       = 1;
     g_WavesCleared = 0;
     g_HudDirty    = 1;
@@ -2521,11 +2789,12 @@ void InitGamePlay()
     // Precarrega patro de barra HP (tile 125, càrrega única)
     {
         u8 bar_col[8];
-        for (t = 0; t < 8; t++) bar_col[t] = 0x81;  // Medium red on black
+        u8 bar_pat[8];
+        for (t = 0; t < 8; t++) { bar_col[t] = 0x81; bar_pat[t] = 0xFF; }
         for (bank = 0; bank < 3; bank++)
         {
-            VDP_LoadBankPattern_GM2(g_BarPattern, 1, bank, BAR_FILL_TILE);
-            VDP_LoadBankColor_GM2(bar_col,        1, bank, BAR_FILL_TILE);
+            VDP_LoadBankPattern_GM2(bar_pat, 1, bank, BAR_FILL_TILE);
+            VDP_LoadBankColor_GM2(bar_col,  1, bank, BAR_FILL_TILE);
         }
     }
     InitWallTiles();
@@ -2550,6 +2819,8 @@ void main()
     VDP_ClearVRAM();
     VDP_SetSpriteFlag(VDP_SPRITE_SIZE_16);
 
+
+
      // Load sprites (una sola vegada)
     VDP_LoadSpritePattern(g_SpriteWhite,      0,  4);
     VDP_LoadSpritePattern(g_SpriteRed,        4,  4);
@@ -2569,10 +2840,6 @@ void main()
     VDP_LoadSpritePattern(g_ExpSprite0,       56, 4);
     VDP_LoadSpritePattern(g_ExpSprite1,       60, 4);
     VDP_LoadSpritePattern(g_ExpSprite2,       64, 4);
-    VDP_LoadSpritePattern(g_ExpSprite3,       68, 4);
-    // Ship explosion composite (white + red layers)
-    VDP_LoadSpritePattern(g_ShipExpWhite,     80, 4);
-    VDP_LoadSpritePattern(g_ShipExpRed,       84, 4);
     // Boss 16x16 (composite 2-sprite like player ship)
     VDP_LoadSpritePattern(g_BossWhiteNew,     72, 4);  // Boss white layer
     VDP_LoadSpritePattern(g_BossRedNew,       76, 4);  // Boss red layer
@@ -2583,6 +2850,8 @@ void main()
     // Init hi-scores
     InitHiScores();
     soundInit();
+
+    VDP_SetSpritePositionY(0, VDP_SPRITE_DISABLE_SM1);
 
     // Mostra menu inicial
     g_GameState  = GS_TITLE;
@@ -2727,8 +2996,7 @@ void main()
              // Draw sprites (but not during game over delay)
              if (g_GameOverDelay == 0)
              {
-                 spr = 0;
-                 g_FrameCount++;
+				spr = 0;
 
                  // Ship (spr 0-1)
                  if (!g_ShipExploding && (!g_ShipInvul || (g_ShipInvulTimer & 1)))
@@ -2743,7 +3011,7 @@ void main()
                      u8 exp_pat_w, exp_pat_r;
                      if (g_ShipExplTimer > 6) { exp_pat_w = 56; exp_pat_r = 60; }
                      else if (g_ShipExplTimer > 3) { exp_pat_w = 60; exp_pat_r = 64; }
-                     else { exp_pat_w = 64; exp_pat_r = 68; }
+                     else { exp_pat_w = 60; exp_pat_r = 64; }
                      g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = exp_pat_w;  g_SprBuf[spr*4+3] = COLOR_WHITE;      spr++;
                      g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = exp_pat_r;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
                  }
@@ -2772,7 +3040,7 @@ void main()
                   // Explosions (ABANS dels enemics per tenir mes prioritat)
                  for (j = 0; j < MAX_EXPLOSIONS && spr < 28; j++)
                  {
-                     static const u8 exp_pat_s[6] = {56, 60, 64, 68, 64, 60};
+                     static const u8 exp_pat_s[5] = {56, 60, 64, 64, 60};
                      if (!g_Explosions[j].active) continue;
                      f = g_Explosions[j].frame;
                      if (f > 5) f = 5;
@@ -2792,7 +3060,7 @@ void main()
                      }
                  }
 
-                  // Enemies (darrere les explosions)
+                   // Enemies (darrere les explosions)
                  {
                      static const u8 etype_pat_w[5] = {16, 24, 32, 40, 48};
                      static const u8 etype_pat_r[5] = {20, 28, 36, 44, 52};
@@ -2813,32 +3081,6 @@ void main()
                          }
                      }
                   }
-
-                  // Explosions
-                 for (j = 0; j < MAX_EXPLOSIONS && spr < 28; j++)
-                 {
-                     static const u8 exp_pat_s[6] = {56, 60, 64, 68, 64, 60};
-                     if (!g_Explosions[j].active) continue;
-                     f = g_Explosions[j].frame;
-                     if (f > 5) f = 5;
-                     pat = exp_pat_s[f];
-                     col = (f == 0) ? COLOR_WHITE :
-                           (f == 1) ? COLOR_LIGHT_YELLOW : COLOR_MEDIUM_RED;
-                     // Boss/Heavy/Bomber: 2 sprites compostos (blanc+vermell)
-                     if (g_Explosions[j].kind == EXP_KIND_BOSS)
-                     {
-                         // White layer
-                         g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = COLOR_WHITE; spr++;
-                         // Red layer
-                         pat = exp_pat_s[(f < 5) ? f+1 : 5];
-                         g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
-                     }
-                     else
-                     {
-                         g_SprBuf[spr*4+0] = g_Explosions[j].y;  g_SprBuf[spr*4+1] = g_Explosions[j].x;  g_SprBuf[spr*4+2] = pat;  g_SprBuf[spr*4+3] = col;
-                         spr++;
-                     }
-                 }
 
                  // Desactiva sprites que sobren (Y=208 = off-screen)
                  while (spr < 32)

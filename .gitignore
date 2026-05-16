@@ -1,3 +1,14 @@
+# Build artifacts
 out/
-emul/
-*.pyc
+*.rom
+*.bin
+*.plet
+*.dat
+*.rel
+*.ihx
+*.lk
+*.lst
+*.sym
+*.map
+*.noi
+*_rawdef.h
