@@ -113,13 +113,13 @@
 
 // Enemies
 #define MAX_ENEMIES        5   // CPC: 5 (no WAVE_PLAN_MAX)
-#define ENEMY_W            12
-#define ENEMY_H            12
+#define ENEMY_W            13
+#define ENEMY_H            13
 #define ENEMY_BOSS_W       16   // Boss is 16x16
 #define ENEMY_BOSS_H       16
-#define ENEMYSHOT_W        2
-#define ENEMYSHOT_H        6
-#define ENEMYSHOT_SPEED_Y  5
+#define ENEMYSHOT_W        1
+#define ENEMYSHOT_H        1
+#define ENEMYSHOT_SPEED_Y  4
 #define ENEMYSHOT_COOLDOWN 18
 #define ENEMYSHOT_STAGGER  5
 #define ENEMYSHOT_VX_FAST  1
@@ -141,7 +141,7 @@
 #define SHIP_HIT_OY        2
 
 // Respawn - valors 1:1 del CPC
-#define SHIP_EXPL_TIMER    9    // CPC: 12, nosaltres 9 = prou per veure l'explosio
+#define SHIP_EXPL_TIMER    9    // CPC: 13, nosaltres 9 = prou per veure l'explosio
 #define RESPAWN_INVUL_TICKS 40  // CPC: RESPAWN_INVUL_TICKS = 40
 
 // Game states - 1:1 CPC
@@ -165,14 +165,27 @@
 #define HUD_FONT_COLOR_NRM  0x31  // Light Green (3) on Black (1)
 #define HUD_FONT_COLOR_HI   0xF1  // White (15) on Black (1)
 #define HUD_FONT_COLOR_CYN  0x71  // Cyan (7) on Black
-#define HLINE_TILE         126   // Tile for cyan separator lines (NOT 167 - conflicts with HI font space!)
-#define BAR_FILL_TILE      125   // Tile for boss HP bar fill
+#define HLINE_TILE         136   // Tile for cyan separator lines (NOT 167 - conflicts with HI font space!)
+#define BAR_FILL_TILE      135   // Tile for boss HP bar fill
 
 // HUD right-side layout (columns 22-31)
 #define HUD_COL 22
 
 // Helper: check if a redefinable key is pressed
 u8 IsKeyPressed(u8 key) { return IS_KEY_PRESSED(Keyboard_Read(key & 0x0F), key); }
+
+// Joystick input helpers (port 1, bits are 0 when pressed)
+#define JOY_DIR()   (~Joystick_Read(JOY_PORT_1) & 0x0F)
+#define JOY_FIRE()  ((Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0)
+
+// Unified input macros - check joystick or keyboard based on g_ControlMode
+#define INPUT_LEFT()   (g_ControlMode ? IsKeyPressed(g_KeyLeft)   : (JOY_DIR() & JOY_INPUT_DIR_LEFT))
+#define INPUT_RIGHT()  (g_ControlMode ? IsKeyPressed(g_KeyRight)  : (JOY_DIR() & JOY_INPUT_DIR_RIGHT))
+#define INPUT_UP()     (g_ControlMode ? IsKeyPressed(g_KeyUp)     : (JOY_DIR() & JOY_INPUT_DIR_UP))
+#define INPUT_DOWN()   (g_ControlMode ? IsKeyPressed(g_KeyDown)   : (JOY_DIR() & JOY_INPUT_DIR_DOWN))
+#define INPUT_FIRE()   (g_ControlMode ? IsKeyPressed(g_KeyFire)   : JOY_FIRE())
+#define INPUT_PAUSE()  (g_ControlMode ? IsKeyPressed(g_KeyPause)  : (Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_B) == 0)
+#define INPUT_QUIT()   (g_ControlMode ? IsKeyPressed(g_KeyQuit)   : 0)
 // Barra HP del boss - patro i color (static const perque es carrega a InitGamePlay)
 
 
@@ -182,6 +195,39 @@ u8 IsKeyPressed(u8 key) { return IS_KEY_PRESSED(Keyboard_Read(key & 0x0F), key);
 // Wall scroll
 #define WALL_TILE_BASE     90   // Abans 200: solapava amb font HI (nums 6-9)
 #define WALL_SPEED         4
+
+// Biome palettes - CPC: only indices 8,9 change per biome
+// CPC palette: {20,6,30,19,0,25,13,21,28,14,21,20,20,20,20,20} (Rocky)
+// MSX color byte: (pen << 4) | ink
+// Wall color A (idx 8) and B (idx 9) per biome:
+//   0 Rocky:  28=grey → 15(white), 14=med red → 8(med red)
+//   1 Ice:    13=lt green → 3(lt green), 25=bright cyan → 7(cyan)
+//   2 Forest: 24=bright yellow → 14(lt yellow), 18=med green → 2(med green)
+//   3 Fire:   14=med red → 8(med red), 4=dark blue → 4(blue)
+//   4 Tech:   5=lt blue → 5(lt blue), 11=dark yellow → 13(yellow)
+#define BIOME_COUNT 5
+static const u8 g_BiomeWallColorA[BIOME_COUNT] = {
+    0xF1,  // Rocky:  white
+    0x31,  // Ice:    light green
+    0xE1,  // Forest: light yellow
+    0x81,  // Fire:   medium red
+    0x51,  // Tech:   light blue
+};
+static const u8 g_BiomeWallColorB[BIOME_COUNT] = {
+    0x81,  // Rocky:  medium red
+    0x71,  // Ice:    cyan
+    0x21,  // Forest: medium green
+    0x41,  // Fire:   blue
+    0xC1,  // Tech:   yellow
+};
+
+// Star colors are FIXED (CPC indices 1,2,4 never change per biome)
+// idx 1=6(dark red) → MSX 8(med red), idx 2=30(bright white) → MSX 15(white)
+#define STAR_COLOR_1  0x81  // medium red on black
+#define STAR_COLOR_2  0xF1  // white on black
+#define STAR_COLOR_3  0xF1  // white on black (CPC uses black but bg is white there)
+
+static u8 g_CurrentBiome = 0;
 
 //=============================================================================
 // DATA STRUCTURES
@@ -207,6 +253,9 @@ static u8  g_ShipExplTimer  = 0;
 static u8  g_ShipInvul      = 0;
 static u8  g_ShipInvulTimer = 0;
 static u8  g_ShipLastLife   = 0;  // 1:1 CPC: ship_last_life
+static u8  g_ShipThrust     = 0;
+static u8  g_ShipThrustFrame = 0;
+static u8  g_ShipThrustLevel = 0;
 static u8  g_GameOverDelay  = 0;
 
 static u8  g_PausedFlag     = 0;  // 1 = paused, 0 = playing
@@ -232,6 +281,8 @@ static u8  g_LastLevel      = 1;
 
 // SET KEYS - 1:1 CPC redefine
 static u8  g_RedefineStep   = 0;
+// Control mode: 0=joystick, 1=keyboard
+static u8  g_ControlMode    = 0;  // default: joystick
 // Tecles actuals (fila,bit) - valors per defecte = fletxes + Z + P + Return
 // KEY_LEFT=row8b4, KEY_RIGHT=row8b7, KEY_UP=row8b5, KEY_DOWN=row8b6
 // KEY_Z=row5b7, KEY_P=row9b2, KEY_Q=row4b6
@@ -264,7 +315,7 @@ static u8  g_SpawnTimer    = SPAWN_FIRST_DELAY;
 static u8  g_WaveIndianDelay = 0;
 static u8  g_BonusDisplayCnt = 0;  // Comptador per mostrar "XN" al completar wave
 static u16 g_WaveBonusBase = 10;
-static u8  g_SprBuf[128];  // Sprite attribute buffer (32 × 4 bytes)
+static u8  g_SprBuf[138];  // Sprite attribute buffer (32 × 4 bytes)
 static u8  g_WaveSlotX[WAVE_PLAN_MAX];
 static u8  g_WaveSlotY[WAVE_PLAN_MAX];
 static u8  g_WaveSlotType[WAVE_PLAN_MAX];
@@ -284,8 +335,8 @@ static TStar g_S3[N3];
 static u8 g_StarTimer1 = 0;
 
 // Wall scroll
-static u8 g_WallPhase = 0;
-static u8 g_WallPhaseTimer = 0;
+static u8  g_WallPhase = 0;
+static u8  g_WallPhaseTimer = 0;
 
 //=============================================================================
 // SPRITE DATA
@@ -310,12 +361,15 @@ static const u8 g_ShotPattern[8] = {
     0x18, 0x3C, 0x3C, 0x3C, 0x18, 0x18, 0x18, 0x00
 };
 
-// Enemy shot sprite (16x16) - 1 pixel vermell (CPC: 2x4 pixel)
-static const u8 g_EnemyShotPattern[32] = {
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // TL: buit
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // BL: buit
-    0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x80,  // TR: 1 pixel col 8, rows 6-7
-    0x80,0x80,0x00,0x00,0x00,0x00,0x00,0x00   // BR: 1 pixel col 8, rows 8-9
+// Thruster flame (8x8) - small flame at top
+static const u8 g_ThrusterPattern[8] = {
+    0x18, 0x3C, 0x3C, 0x18, 0x00, 0x00, 0x00, 0x00
+};
+
+// Enemy shot sprite (8x8) - 1 pixel vermell centrat
+// Format MSX: 1 byte per row, 8 rows
+static const u8 g_EnemyShotPattern[8] = {
+    0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00  // 1 pixel a row 4, col 4
 };
 // Bomber shot (16x16) - allargat, 2px ample x 8px alt (punta avall)
 static const u8 g_BomberShotPattern[32] = {
@@ -347,7 +401,7 @@ static const u8 g_ExpSprite2[32] = { // radi 6 - cercle mitja
     0x00,0xC0,0xF0,0xF8,0xFC,0xFE,0xFE,0xFF,  // TR
     0xFF,0xFE,0xFE,0xFC,0xF8,0xF0,0xC0,0x00   // BR
 };
-// Enemy sprite - converted from CPC 12x12, centered in 16x16 (2px padding each side)
+// Enemy sprite - converted from CPC 13x13, centered in 16x16 (2px padding each side)
 // MSX format: first 16 bytes = left half (px 0-7) per row, next 16 = right half (px 8-15)
 // White layer: C (blue->white), W (white), Y (yellow->white)
 static const u8 g_EnemyWhite[32] = {
@@ -470,7 +524,9 @@ void InitWallTiles()
     u8 phase, row;
     u8 tile[8];
     u8 rcol[8];
-    for (row = 0; row < 8; row++) rcol[row] = 0x54;
+    u8 ca = g_BiomeWallColorA[g_CurrentBiome];
+    u8 cb = g_BiomeWallColorB[g_CurrentBiome];
+    for (row = 0; row < 8; row++) rcol[row] = (row & 1) ? cb : ca;
     for (phase = 0; phase < 8; phase++)
     {
         for (row = 0; row < 8; row++)
@@ -538,9 +594,18 @@ void InitStarTilesForBase(u8 base, u8 inkColor)
 
 void InitStarTiles()
 {
-    InitStarTilesForBase(STAR_TILE_BASE_1, 0x41); // dark blue ink (color 4) on black (1)
-    InitStarTilesForBase(STAR_TILE_BASE_2, 0x51); // light blue ink (color 5) on black (1)
-    InitStarTilesForBase(STAR_TILE_BASE_3, 0xF1); // white ink (color 15) on black (1)
+    InitStarTilesForBase(STAR_TILE_BASE_1, STAR_COLOR_1);
+    InitStarTilesForBase(STAR_TILE_BASE_2, STAR_COLOR_2);
+    InitStarTilesForBase(STAR_TILE_BASE_3, STAR_COLOR_3);
+}
+
+void UpdateBiomeColors()
+{
+    u8 newBiome = (u8)((g_Level - 1) / 5);
+    if (newBiome > 4) newBiome = 4;
+    if (newBiome == g_CurrentBiome) return;
+    g_CurrentBiome = newBiome;
+    InitWallTiles();
 }
 
 // Dibuixa un pixel a la posició (x,y) en mode 2
@@ -642,14 +707,31 @@ static void AddScore(u16 points)
 
 void UpdateHUD()
 {
+    static u16 last_score = 0xFFFF;
+    static u8 last_level = 0xFF;
+    static u8 last_lives = 0xFF;
+    static u8 last_bonus_visible = 0xFF;
+    static u8 last_bonus_wave = 0xFF;
+    static u8 last_has_boss = 0xFF;
+    static u8 last_boss_filled = 0xFF;
     u8 i, t;
+    u8 full;
+    u8 bonus_visible;
+    u8 has_boss = 0;
+    u8 cur_hp = 0;
+    u8 max_hp = 0;
+    u8 boss_filled = 0;
+
     if (!g_HudDirty) return;
 
+    full = (last_score == 0xFFFF);
+
     // Score (rows 0-1)
-    HudDrawText(HUD_COL, 0, "SCORE", HUD_FONT_COLOR_NRM);
+    if (full || last_score != g_Score)
     {
         u16 s = g_Score;
         char buf[6];
+        if (full) HudDrawText(HUD_COL, 0, "SCORE", HUD_FONT_COLOR_NRM);
         buf[4] = (char)('0' + s % 10); s /= 10;
         buf[3] = (char)('0' + s % 10); s /= 10;
         buf[2] = (char)('0' + s % 10); s /= 10;
@@ -657,76 +739,86 @@ void UpdateHUD()
         buf[0] = (char)('0' + s % 10);
         buf[5] = 0;
         HudDrawText(HUD_COL, 1, buf, HUD_FONT_COLOR_HI);
+        last_score = g_Score;
     }
 
     // Wave bonus (rows 3-4) - nomes es mostra breument al completar wave
-    if (g_BonusDisplayCnt > 0)
+    bonus_visible = (g_BonusDisplayCnt > 0) ? 1 : 0;
+    if (full || last_bonus_visible != bonus_visible || (bonus_visible && last_bonus_wave != g_WaveTotal))
     {
-        HudDrawText(HUD_COL, 3, "BONUS", HUD_FONT_COLOR_NRM);
-        char buf[4];
-        buf[0] = 'X';
-        buf[1] = (char)('0' + g_WaveTotal);
-        buf[2] = 0;
-        HudDrawText(HUD_COL, 4, buf, HUD_FONT_COLOR_HI);
-    }
-    else
-    {
-        HudDrawText(HUD_COL, 3, "     ", HUD_FONT_COLOR_NRM);
-        HudDrawText(HUD_COL, 4, "     ", HUD_FONT_COLOR_NRM);
+        if (bonus_visible)
+        {
+            char buf[4];
+            HudDrawText(HUD_COL, 3, "BONUS", HUD_FONT_COLOR_NRM);
+            buf[0] = 'X';
+            buf[1] = (char)('0' + g_WaveTotal);
+            buf[2] = 0;
+            HudDrawText(HUD_COL, 4, buf, HUD_FONT_COLOR_HI);
+        }
+        else
+        {
+            HudDrawText(HUD_COL, 3, "     ", HUD_FONT_COLOR_NRM);
+            HudDrawText(HUD_COL, 4, "     ", HUD_FONT_COLOR_NRM);
+        }
+        last_bonus_visible = bonus_visible;
+        last_bonus_wave = g_WaveTotal;
     }
 
     // Level (rows 6-7)
-    HudDrawText(HUD_COL, 6, "LEVEL", HUD_FONT_COLOR_NRM);
+    if (full || last_level != g_Level)
     {
         char buf[3];
+        if (full) HudDrawText(HUD_COL, 6, "LEVEL", HUD_FONT_COLOR_NRM);
         buf[0] = (char)('0' + g_Level / 10);
         buf[1] = (char)('0' + g_Level % 10);
         buf[2] = 0;
         HudDrawText(HUD_COL, 7, buf, HUD_FONT_COLOR_HI);
+        last_level = g_Level;
     }
 
     // Lives (rows 9-10)
-    HudDrawText(HUD_COL, 9, "LIVES", HUD_FONT_COLOR_NRM);
+    if (full || last_lives != g_Lives)
     {
         char buf[2];
+        if (full) HudDrawText(HUD_COL, 9, "LIVES", HUD_FONT_COLOR_NRM);
         buf[0] = (char)('0' + g_Lives);
         buf[1] = 0;
         HudDrawText(HUD_COL, 10, buf, HUD_FONT_COLOR_HI);
+        last_lives = g_Lives;
     }
 
-    // Boss HP bar (row 12+, only during boss waves)
+    // Boss HP bar (row 13+, only during boss waves)
+    for (i = 0; i < MAX_ENEMIES; i++)
     {
-        u8 has_boss = 0;
-        u8 cur_hp = 0;
-        u8 max_hp = 0;
-        for (i = 0; i < MAX_ENEMIES; i++)
+        if (g_Enemies[i].active && g_Enemies[i].type == ENEMY_TYPE_BOSS)
         {
-            if (g_Enemies[i].active && g_Enemies[i].type == ENEMY_TYPE_BOSS)
-            {
-                cur_hp = g_Enemies[i].health;
-                max_hp = g_Enemies[i].boss_hp_max;
-                has_boss = 1;
-                break;
-            }
-        }
-        if (has_boss)
-        {
-            if (!max_hp) max_hp = GetBossMaxHP(BossTierFromLevel(g_Level));
-            HudDrawText(HUD_COL, 12, "HP", HUD_FONT_COLOR_HI);
-            u8 filled = (u8)((u16)cur_hp * 5u / max_hp);
-            for (t = 0; t < 5; t++)
-                VDP_Poke_GM2((u8)(HUD_COL + 3 + t), 12, (t < filled) ? BAR_FILL_TILE : 0);
-        }
-        else
-        {
-            // Clear HP area if boss inactive
-            HudDrawText(HUD_COL, 12, "          ", HUD_FONT_COLOR_NRM);
+            cur_hp = g_Enemies[i].health;
+            max_hp = g_Enemies[i].boss_hp_max;
+            has_boss = 1;
+            break;
         }
     }
+    if (has_boss)
+    {
+        if (!max_hp) max_hp = GetBossMaxHP(BossTierFromLevel(g_Level));
+        boss_filled = (u8)((u16)cur_hp * 5u / max_hp);
+        if (full || last_has_boss != has_boss || last_boss_filled != boss_filled)
+        {
+            if (full || last_has_boss != has_boss) HudDrawText(HUD_COL, 13, "HP", HUD_FONT_COLOR_HI);
+            for (t = 0; t < 5; t++)
+                VDP_Poke_GM2((u8)(HUD_COL + 3 + t), 13, (t < boss_filled) ? BAR_FILL_TILE : 0);
+        }
+    }
+    else if (full || last_has_boss != has_boss)
+    {
+        // Clear HP area if boss inactive
+        HudDrawText(HUD_COL, 13, "          ", HUD_FONT_COLOR_NRM);
+    }
+    last_has_boss = has_boss;
+    last_boss_filled = boss_filled;
 
     g_HudDirty = 0;
 }
-
 //=============================================================================
 // ENEMIES
 //=============================================================================
@@ -984,7 +1076,7 @@ static void BuildWaveLayoutFastRank(u8 n)
 static void BuildWaveLayoutIndian(u8 n)
 {
     u8 i, x;
-    x = (u8)(GAME_X0 + MOD_POW2(Math_GetRandom8(), 128));
+    x = (u8)(GAME_X0 + MOD_POW2(Math_GetRandom8(), 138));
     if (x > GAME_X1 - ENEMY_W) x = (u8)(GAME_X1 - ENEMY_W);
     for (i = 0; i < n; i++)
     {
@@ -1039,6 +1131,8 @@ static void SpawnOneFromQueue()
 // 1:1 CPC: tryWaveSpawnTopup
 static void TryWaveSpawnTopup()
 {
+    u8 active;
+    u8 budget;
     if (g_WaveMode == WAVE_MODE_INDIAN)
     {
         if (g_WaveIndianDelay) { g_WaveIndianDelay--; return; }
@@ -1050,9 +1144,15 @@ static void TryWaveSpawnTopup()
         }
         return;
     }
-    // RANK: spawna tots de cop
-    while (g_WaveSpawned < g_WaveTotal && CountActiveEnemies() < g_WaveTotal)
+    // RANK: spawna en petits blocs per evitar pics de CPU quan apareix la formacio
+    active = CountActiveEnemies();
+    budget = 2;
+    while (budget && g_WaveSpawned < g_WaveTotal && active < g_WaveTotal)
+    {
         SpawnOneFromQueue();
+        active++;
+        budget--;
+    }
 }
 
 // 1:1 CPC: startNewWave
@@ -1231,6 +1331,7 @@ static void UpdateWaveBonus()
             {
                 g_Level++;
                 sfxLevelUp();
+                UpdateBiomeColors();
             }
             g_HudDirty = 1;
         }
@@ -1728,8 +1829,8 @@ void soundInit(void) { soundStopAll(); }
 void sfxShot(void) { sfxC_kind = SFX_SHOT; sfxC_frame = 0; setToneC(30, 1, 9); PSG_EnableTone(PSG_CHANNEL_C, TRUE); PSG_EnableNoise(PSG_CHANNEL_C, FALSE); }
 void sfxEnemyExplosion(void) { sfxB_kind = SFX_EXP_ENEMY; sfxB_frame = 0; PSG_SetRegister(6, 0x04); PSG_SetVolume(PSG_CHANNEL_B, 13); PSG_EnableTone(PSG_CHANNEL_B, FALSE); PSG_EnableNoise(PSG_CHANNEL_B, TRUE); }
 void sfxShipExplosion(void) { sfxB_kind = SFX_EXP_SHIP; sfxB_frame = 0; setToneB(138, 1, 15); PSG_SetRegister(6, 0x04); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, TRUE); }
-void sfxBeep(void) { sfxA_kind = SFX_BEEP; sfxA_frame = 0; sfxB_kind = SFX_BEEP; sfxB_frame = 0; setToneA(172, 1, 15); setToneB(84, 1, 12); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, FALSE); }
-void sfxGameOver(void) { sfxA_kind = SFX_GAMEOVER; sfxA_frame = 0; sfxB_kind = SFX_GAMEOVER; sfxB_frame = 0; sfxC_kind = SFX_GAMEOVER; sfxC_frame = 0; setToneA(252, 1, 12); setToneB(172, 1, 12); setToneC(84, 1, 12); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, FALSE); PSG_EnableTone(PSG_CHANNEL_C, TRUE); PSG_EnableNoise(PSG_CHANNEL_C, FALSE); }
+void sfxBeep(void) { sfxA_kind = SFX_BEEP; sfxA_frame = 0; sfxB_kind = SFX_BEEP; sfxB_frame = 0; setToneA(172, 1, 15); setToneB(84, 1, 13); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, FALSE); }
+void sfxGameOver(void) { sfxA_kind = SFX_GAMEOVER; sfxA_frame = 0; sfxB_kind = SFX_GAMEOVER; sfxB_frame = 0; sfxC_kind = SFX_GAMEOVER; sfxC_frame = 0; setToneA(252, 1, 13); setToneB(172, 1, 13); setToneC(84, 1, 13); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, FALSE); PSG_EnableTone(PSG_CHANNEL_C, TRUE); PSG_EnableNoise(PSG_CHANNEL_C, FALSE); }
 void sfxLevelUp(void) { sfxA_kind = SFX_LEVELUP; sfxA_frame = 0; setToneA(172, 1, 14); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); }
 void sfxEnemyShot(void) { sfxB_kind = SFX_EXP_ENEMY; sfxB_frame = 3; PSG_SetRegister(6, 0x10); PSG_SetVolume(PSG_CHANNEL_B, 8); PSG_EnableTone(PSG_CHANNEL_B, FALSE); PSG_EnableNoise(PSG_CHANNEL_B, TRUE); }
 void sfxMenuSelect(void) { sfxA_kind = SFX_LEVELUP; sfxA_frame = 0; setToneA(172, 1, 15); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); }
@@ -1752,7 +1853,7 @@ static void tickChannelA(void) {
         ++sfxA_frame; return;
     }
     if (sfxA_kind == SFX_GAMEOVER) {
-        if (sfxA_frame < 60) { setToneA(252, 1, 12); }
+        if (sfxA_frame < 60) { setToneA(252, 1, 13); }
         else { sfxA_kind = SFX_NONE; sfxA_frame = 0; PSG_SetVolume(PSG_CHANNEL_A, 0); return; }
         ++sfxA_frame; return;
     }
@@ -1774,24 +1875,24 @@ static void tickChannelB(void) {
         switch (sfxB_frame) {
             case 0: setToneB(138, 1, 15); PSG_SetRegister(6, 0x04); break;
             case 1: setToneB( 66, 1, 14); PSG_SetRegister(6, 0x06); break;
-            case 2: setToneB( 13, 1, 12); PSG_SetRegister(6, 0x08); break;
+            case 2: setToneB( 13, 1, 13); PSG_SetRegister(6, 0x08); break;
             case 3: setToneB(215, 0, 10); PSG_SetRegister(6, 0x0C); break;
-            case 4: setToneB(161, 0,  8); PSG_SetRegister(6, 0x12); break;
-            case 5: setToneB(125, 0,  6); PSG_SetRegister(6, 0x16); break;
+            case 4: setToneB(161, 0,  8); PSG_SetRegister(6, 0x13); break;
+            case 5: setToneB(135, 0,  6); PSG_SetRegister(6, 0x16); break;
             case 6: setToneB( 90, 0,  4); PSG_SetRegister(6, 0x1B); break;
             default: sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetVolume(PSG_CHANNEL_B, 0); return;
         }
         ++sfxB_frame; return;
     }
     if (sfxB_kind == SFX_BEEP) {
-        if (sfxB_frame < 2)           setToneB( 84, 1, 12);
+        if (sfxB_frame < 2)           setToneB( 84, 1, 13);
         else if (sfxB_frame == 2)     PSG_SetVolume(PSG_CHANNEL_B, 0);
-        else if (sfxB_frame < 5)      setToneB( 29, 1, 12);
+        else if (sfxB_frame < 5)      setToneB( 29, 1, 13);
         else { sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetVolume(PSG_CHANNEL_B, 0); return; }
         ++sfxB_frame; return;
     }
     if (sfxB_kind == SFX_GAMEOVER) {
-        if (sfxB_frame < 60) { setToneB(172, 1, 12); }
+        if (sfxB_frame < 60) { setToneB(172, 1, 13); }
         else { sfxB_kind = SFX_NONE; sfxB_frame = 0; PSG_SetVolume(PSG_CHANNEL_B, 0); return; }
         ++sfxB_frame; return;
     }
@@ -1805,7 +1906,7 @@ static void tickChannelC(void) {
         ++sfxC_frame; return;
     }
     if (sfxC_kind == SFX_GAMEOVER) {
-        if (sfxC_frame < 60) { setToneC(84, 1, 12); }
+        if (sfxC_frame < 60) { setToneC(84, 1, 13); }
         else { sfxC_kind = SFX_NONE; sfxC_frame = 0; PSG_SetVolume(PSG_CHANNEL_C, 0); return; }
         ++sfxC_frame; return;
     }
@@ -1864,6 +1965,9 @@ void RespawnShip()
     g_ShipInvul      = 0;
     g_ShipInvulTimer = 0;
     g_FireCooldown   = 0;
+    g_ShipThrust     = 0;
+    g_ShipThrustLevel = 0;
+    g_ShipThrustFrame = 0;
     g_ShipX          = SHIP_SPAWN_X;
     g_ShipY          = (u8)(SHIP_SPAWN_Y);
     // CPC: clearActiveCombatState - ara aqui per no netejar pantalla durant l'explosio
@@ -1894,6 +1998,21 @@ void UpdateShipInvulnerability()
     if (!g_ShipInvulTimer) g_ShipInvul = 0;
 }
 
+void UpdateShipThrustAnim()
+{
+    if (g_ShipThrust)
+    {
+        if (g_ShipThrustLevel < 5) g_ShipThrustLevel++;
+        g_ShipThrustFrame++;
+    }
+    else
+    {
+        if (g_ShipThrustLevel) g_ShipThrustLevel--;
+        if (g_ShipThrustLevel) g_ShipThrustFrame++;
+        else g_ShipThrustFrame = 0;
+    }
+}
+
 void TriggerShipHit()
 {
     // 1:1 CPC: triggerShipHit
@@ -1909,6 +2028,9 @@ void TriggerShipHit()
     g_ShipExploding = 1;
     g_ShipExplTimer = SHIP_EXPL_TIMER;
     g_FireCooldown  = 0;
+    g_ShipThrust    = 0;
+    g_ShipThrustLevel = 0;
+    g_ShipThrustFrame = 0;
     // NOTA: No netegem enemics aqui - ho fa RespawnShip per veure l'explosio
 }
 
@@ -1988,8 +2110,8 @@ void CheckCollisions()
     for (j = 0; j < MAX_ENEMY_SHOTS; j++)
     {
         if (!g_EnemyShots[j].active) continue;
-        if (OVERLAP(g_ShipX, g_ShipY, SHIP_W, SHIP_H,
-                    g_EnemyShots[j].x, g_EnemyShots[j].y, 4, 8))
+        if (OVERLAP((u8)(g_ShipX + SHIP_HIT_OX), (u8)(g_ShipY + SHIP_HIT_OY), SHIP_HIT_W, SHIP_HIT_H,
+                    g_EnemyShots[j].x, g_EnemyShots[j].y, ENEMYSHOT_W, ENEMYSHOT_H))
         {
             g_EnemyShots[j].active = 0;
             TriggerShipHit();
@@ -2072,7 +2194,7 @@ void DrawHiScoreTable(u8 inputPos)
         buf[8]  = 'L'; buf[9]  = 'V';
         buf[10] = (char)('0' + ((i == inputPos) ? g_LastLevel : lvl) / 10);
         buf[11] = (char)('0' + ((i == inputPos) ? g_LastLevel : lvl) % 10);
-        buf[12] = ' ';
+        buf[13] = ' ';
         if (i == inputPos)
         {
             buf[13] = (char)g_HsInputChar[0];
@@ -2121,7 +2243,7 @@ void RedrawHsInput()
             buf[8]  = 'L'; buf[9]  = 'V';
             buf[10] = (char)('0' + g_LastLevel / 10);
             buf[11] = (char)('0' + g_LastLevel % 10);
-            buf[12] = ' ';
+            buf[13] = ' ';
             buf[13] = (char)g_HsInputChar[0];
             buf[14] = (char)g_HsInputChar[1];
             buf[15] = (char)g_HsInputChar[2];
@@ -2138,8 +2260,8 @@ void RedrawHsInput()
 
 // Menu starfield - keep stars outside text/hline columns because twinkle rewrites tiles
 #define MENU_STAR_N         40
-#define MENU_STAR_CN        12   // estrelles centrals per TOP3/HELP
-#define MENU_STAR_TILE_BASE 168
+#define MENU_STAR_CN        13   // estrelles centrals per TOP3/HELP
+#define MENU_STAR_TILE_BASE 204
 #define MENU_TWINKLE_FRAMES 4
 
 static const u8 g_MenuStarX[MENU_STAR_N] = {
@@ -2150,9 +2272,9 @@ static const u8 g_MenuStarX[MENU_STAR_N] = {
 };
 static const u8 g_MenuStarY[MENU_STAR_N] = {
     0x01,0x03,0x05,0x06,0x08,0x0A,0x0B,0x0D,0x0E,0x0F,
-    0x10,0x12,0x13,0x14,0x15,0x16,0x02,0x07,0x0D,0x15,
+    0x10,0x13,0x13,0x14,0x15,0x16,0x02,0x07,0x0D,0x15,
     0x02,0x03,0x05,0x06,0x08,0x0A,0x0B,0x0D,0x0E,0x0F,
-    0x10,0x12,0x13,0x14,0x15,0x16,0x01,0x07,0x0D,0x15
+    0x10,0x13,0x13,0x14,0x15,0x16,0x01,0x07,0x0D,0x15
 };
 static const u8 g_MenuStarSeed[MENU_STAR_N] = {
     0,2,1,3,1,0,3,2,0,1,3,2,2,0,3,1,1,2,0,3,
@@ -2162,7 +2284,7 @@ static const u8 g_MenuStarCX[MENU_STAR_CN] = {
     0x07,0x0A,0x0D,0x10,0x13,0x16,0x08,0x0B,0x11,0x14,0x18,0x1B
 };
 static const u8 g_MenuStarCY[MENU_STAR_CN] = {
-    0x02,0x03,0x04,0x05,0x06,0x07,0x13,0x14,0x15,0x16,0x12,0x14
+    0x02,0x03,0x04,0x05,0x06,0x07,0x13,0x14,0x15,0x16,0x13,0x14
 };
 static const u8 g_MenuStarCS[MENU_STAR_CN] = {
     0,3,1,2,2,0,3,1,1,2,3,0
@@ -2250,10 +2372,10 @@ void TickMenuStars()
 
 // Logo tiles - 24 tiles 8x8 (8 tiles ample x 3 files alt = 64x24px)
 // Convertit del sprite CPC Mode 0 74x25px escalat a 64x24px
-#define LOGO_TILE_BASE  100  // patrons 100-123
+#define LOGO_TILE_BASE  100  // patrons 100-133
 #define LOGO_TILES_X    8
 #define LOGO_TILES_Y    3
-#define LOGO_COL_START  12   // centrat: (32-8)/2=12
+#define LOGO_COL_START  13   // centrat: (32-8)/2=13
 
 static const u8 g_LogoTiles[24*8] = {
     0x0F,0x1F,0x1F,0x3F,0x3F,0x3F,0x3F,0x3F,
@@ -2420,7 +2542,9 @@ void UpdateMenuInput()
     u8 row8 = Keyboard_Read(8);
     u8 row5 = Keyboard_Read(5);
     u8 row0 = Keyboard_Read(0); // tecles 1, 2, 3
-    u8 fire  = IS_KEY_PRESSED(row8, KEY_SPACE) || IS_KEY_PRESSED(row5, KEY_Z);
+    u8 joy = ~Joystick_Read(JOY_PORT_1) & 0x0F;
+    u8 joy_fire = (Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0;
+    u8 fire  = IS_KEY_PRESSED(row8, KEY_SPACE) || IS_KEY_PRESSED(row5, KEY_Z) || joy_fire;
 
     g_BlinkCtr++;
 
@@ -2444,7 +2568,18 @@ void UpdateMenuInput()
             return;
         }
 
-        if (IS_KEY_PRESSED(row0, KEY_3))
+        // Control mode selection: 1=joystick, 2=keyboard, 3=set keys
+        if (IS_KEY_PRESSED(row0, KEY_1) || (joy & JOY_INPUT_DIR_LEFT))
+        {
+            g_ControlMode = 0;
+            g_TitleDirty = 1; g_TitlePhase = 0;
+        }
+        else if (IS_KEY_PRESSED(row0, KEY_2) || (joy & JOY_INPUT_DIR_RIGHT))
+        {
+            g_ControlMode = 1;
+            g_TitleDirty = 1; g_TitlePhase = 0;
+        }
+        else if (IS_KEY_PRESSED(row0, KEY_3) || (joy & JOY_INPUT_DIR_DOWN))
         {
             g_TitleMode = TS_REDEFINE; g_RedefineStep = 0;
             g_TitleDirty = 1; g_TitlePhase = 0;
@@ -2641,10 +2776,10 @@ void UpdateMenuInput()
     {
         DrawLogo();
         HudDrawHLine(0, 4, 32, HUD_FONT_COLOR_CYN);
-        HudDrawText(11, 6, "1 JOYSTICK", HUD_FONT_COLOR_NRM);
-        HudDrawText(11, 8, "2 KEYBOARD", HUD_FONT_COLOR_NRM);
+        HudDrawText(11, 6, "1 JOYSTICK", g_ControlMode == 0 ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM);
+        HudDrawText(11, 8, "2 KEYBOARD", g_ControlMode == 1 ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM);
         HudDrawText(11,10, "3 SET KEYS", HUD_FONT_COLOR_NRM);
-        HudDrawHLine(0, 12, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(0, 13, 32, HUD_FONT_COLOR_CYN);
         HudDrawText(9, 15, "FIRE TO START", HUD_FONT_COLOR_HI);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
@@ -2692,7 +2827,7 @@ void UpdateMenuInput()
         HudDrawText(8,  6, "CONGRATULATIONS",       HUD_FONT_COLOR_HI);
         HudDrawText(6,  8, "THE INVASION IS OVER",  HUD_FONT_COLOR_NRM);
         HudDrawText(5, 10, "THANK YOU FOR PLAYING", HUD_FONT_COLOR_NRM);
-        HudDrawHLine(0, 12, 32, HUD_FONT_COLOR_NRM);
+        HudDrawHLine(0, 13, 32, HUD_FONT_COLOR_NRM);
         HudDrawText(6, 20, "PRESS FIRE TO MENU", HUD_FONT_COLOR_HI);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
@@ -2711,10 +2846,10 @@ void UpdateMenuInput()
     else if (g_TitleMode == TS_REDEFINE)
     {
         static const char* const key_names[7] = {"LEFT","RIGHT","UP","DOWN","FIRE","PAUSE","QUIT"};
-        HudDrawText(12, 6,  "SET KEYS",   HUD_FONT_COLOR_HI);
+        HudDrawText(13, 6,  "SET KEYS",   HUD_FONT_COLOR_HI);
         HudDrawHLine(0,  8, 32, HUD_FONT_COLOR_CYN);
         if (g_RedefineStep < 7)
-            HudDrawText(12, 12, key_names[g_RedefineStep], HUD_FONT_COLOR_HI);
+            HudDrawText(13, 13, key_names[g_RedefineStep], HUD_FONT_COLOR_HI);
         HudDrawText(10, 16, "PRESS A KEY", HUD_FONT_COLOR_NRM);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
@@ -2786,7 +2921,7 @@ void InitGamePlay()
     // Inicialitza pantalla de joc
     VDP_FillScreen_GM2(0);
     InitHudFontTiles();   // Recarrega font (sobreescrita per star tiles 168-170)
-    // Precarrega patro de barra HP (tile 125, càrrega única)
+    // Precarrega patro de barra HP (tile 135, càrrega única)
     {
         u8 bar_col[8];
         u8 bar_pat[8];
@@ -2825,7 +2960,7 @@ void main()
     VDP_LoadSpritePattern(g_SpriteWhite,      0,  4);
     VDP_LoadSpritePattern(g_SpriteRed,        4,  4);
     VDP_LoadSpritePattern(g_ShotPattern,      8,  1);
-    VDP_LoadSpritePattern(g_EnemyShotPattern, 12, 4);
+    VDP_LoadSpritePattern(g_EnemyShotPattern, 12, 1);
     VDP_LoadSpritePattern(g_BomberShotPattern, 88, 4);
     VDP_LoadSpritePattern(g_EnemyWhite,       16, 4);
     VDP_LoadSpritePattern(g_EnemyRed,         20, 4);
@@ -2840,6 +2975,7 @@ void main()
     VDP_LoadSpritePattern(g_ExpSprite0,       56, 4);
     VDP_LoadSpritePattern(g_ExpSprite1,       60, 4);
     VDP_LoadSpritePattern(g_ExpSprite2,       64, 4);
+    VDP_LoadSpritePattern(g_ThrusterPattern,  68, 1);
     // Boss 16x16 (composite 2-sprite like player ship)
     VDP_LoadSpritePattern(g_BossWhiteNew,     72, 4);  // Boss white layer
     VDP_LoadSpritePattern(g_BossRedNew,       76, 4);  // Boss red layer
@@ -2905,15 +3041,15 @@ void main()
          {
              //=== PLAYING ===
 
-             // Pause/unpause with redefinable key
-             static u8 p_key_was_pressed = 0;
-             u8 p_key_pressed = IsKeyPressed(g_KeyPause);
-             if (p_key_pressed && !p_key_was_pressed)
-                 g_PausedFlag = !g_PausedFlag;
-             p_key_was_pressed = p_key_pressed;
+              // Pause/unpause with redefinable key or joystick button B
+              static u8 p_key_was_pressed = 0;
+              u8 p_key_pressed = INPUT_PAUSE();
+              if (p_key_pressed && !p_key_was_pressed)
+                  g_PausedFlag = !g_PausedFlag;
+              p_key_was_pressed = p_key_pressed;
 
-             // Quit to menu with redefinable key (Q)
-             if (IsKeyPressed(g_KeyQuit))
+              // Quit to menu with redefinable key (joystick: no quit button)
+              if (INPUT_QUIT())
              {
                  soundStopAll();
                  g_GameState = GS_TITLE;
@@ -2933,18 +3069,20 @@ void main()
              }
              g_StarTimer1++;
 
-             // Skip game updates if paused
-             if (!g_PausedFlag)
-             {
-                 // Input
-                  if (!g_ShipExploding)
-                  {
-                      if (IsKeyPressed(g_KeyLeft)  && g_ShipX > SHIP_MIN_X) g_ShipX -= g_ShipSpeedX;
-                      if (IsKeyPressed(g_KeyRight) && g_ShipX < SHIP_MAX_X) g_ShipX += g_ShipSpeedX;
-                      if (IsKeyPressed(g_KeyUp)    && g_ShipY > SHIP_MIN_Y) g_ShipY -= g_ShipSpeedY;
-                      if (IsKeyPressed(g_KeyDown)  && g_ShipY < SHIP_MAX_Y) g_ShipY += g_ShipSpeedY;
+              // Skip game updates if paused
+              if (!g_PausedFlag)
+              {
+                   // Input
+                    if (!g_ShipExploding)
+                    {
+                        u8 thrust_now = 0;
+                        if (INPUT_LEFT()  && g_ShipX > SHIP_MIN_X) { g_ShipX -= g_ShipSpeedX; thrust_now = 1; }
+                        if (INPUT_RIGHT() && g_ShipX < SHIP_MAX_X) { g_ShipX += g_ShipSpeedX; thrust_now = 1; }
+                        if (INPUT_UP()    && g_ShipY > SHIP_MIN_Y) { g_ShipY -= g_ShipSpeedY; thrust_now = 1; }
+                        if (INPUT_DOWN()  && g_ShipY < SHIP_MAX_Y) { g_ShipY += g_ShipSpeedY; thrust_now = 1; }
+                        g_ShipThrust = thrust_now;
 
-                      if ((IsKeyPressed(g_KeyFire) || IS_KEY_PRESSED(row8, KEY_SPACE)) && g_FireCooldown == 0)
+                       if ((INPUT_FIRE() || IS_KEY_PRESSED(row8, KEY_SPACE)) && g_FireCooldown == 0)
                      {
                          for (i = 0; i < MAX_SHOTS; i++)
                          {
@@ -2975,9 +3113,10 @@ void main()
                  CheckCollisions();
                  TickExplosions();
                  UpdateWaveBonus();
-                 UpdateShipExplosionState();
-                 UpdateShipInvulnerability();
-             }
+                  UpdateShipExplosionState();
+                  UpdateShipInvulnerability();
+                  UpdateShipThrustAnim();
+              }
 
               // Victoria (nivell final completat)
              if (g_Level > ENDGAME_FINAL_LEVEL)
@@ -2993,18 +3132,29 @@ void main()
              if (g_GameState == GS_PLAYING)
                  UpdateHUD();
 
-             // Draw sprites (but not during game over delay)
-             if (g_GameOverDelay == 0)
-             {
-				spr = 0;
+               // Draw sprites (but not during game over delay)
+               if (g_GameOverDelay == 0)
+               {
+  				spr = 0;
 
-                 // Ship (spr 0-1)
-                 if (!g_ShipExploding && (!g_ShipInvul || (g_ShipInvulTimer & 1)))
-                 {
-                     g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = 0;   g_SprBuf[spr*4+3] = COLOR_WHITE;       spr++;
-                     g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = 4;   g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED;  spr++;
-                     // Si la nau es visible NO hi ha explosio
-                 }
+                  // Ship (spr 0-1)
+                  if (!g_ShipExploding && (!g_ShipInvul || (g_ShipInvulTimer & 1)))
+                  {
+                      g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = 0;   g_SprBuf[spr*4+3] = COLOR_WHITE;       spr++;
+                      g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = 4;   g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED;  spr++;
+
+                      // Thrusters (spr 2-3) - flame sprites below ship
+                      if (g_ShipThrustLevel > 0)
+                      {
+                           u8 ty = (u8)(g_ShipY + 14);
+                           u8 txl = (u8)(g_ShipX + 1);
+                           u8 txr = (u8)(g_ShipX + 7);
+                           u8 tcol = (g_ShipThrustFrame & 1) ? COLOR_LIGHT_YELLOW : COLOR_WHITE;
+                           g_SprBuf[spr*4+0] = ty;  g_SprBuf[spr*4+1] = txl;  g_SprBuf[spr*4+2] = 68;  g_SprBuf[spr*4+3] = tcol;  spr++;
+                           g_SprBuf[spr*4+0] = ty;  g_SprBuf[spr*4+1] = txr;  g_SprBuf[spr*4+2] = 68;  g_SprBuf[spr*4+3] = tcol;  spr++;
+                      }
+                      // Si la nau es visible NO hi ha explosio
+                  }
                  else if (g_ShipExploding)
                  {
                      // Explosio 2 capes (blanc exterior + vermell interior)
@@ -3093,7 +3243,7 @@ void main()
                  }
 
                  // Batch write all 32 sprites to VRAM en un sol cop
-                 VDP_WriteVRAM(g_SprBuf, g_SpriteAttributeLow, g_SpriteAttributeHigh, 128);
+                 VDP_WriteVRAM(g_SprBuf, g_SpriteAttributeLow, g_SpriteAttributeHigh, 138);
               }
               else
               {
