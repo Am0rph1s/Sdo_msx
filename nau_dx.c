@@ -720,7 +720,9 @@ void UpdateHUD()
 
     if (!g_HudDirty) return;
 
-    full = (last_score == 0xFFFF);
+    // Force full redraw if this is first call after game init (score was reset to 0)
+    full = (last_score == 0xFFFF) || (g_Score == 0 && last_score != 0);
+    if (full) { last_score = 0xFFFF; last_level = 0xFF; last_lives = 0xFF; last_bonus_visible = 0xFF; last_has_boss = 0xFF; last_boss_filled = 0xFF; }
 
     // Score (rows 0-1)
     if (full || last_score != g_Score)
@@ -2888,9 +2890,14 @@ void ResetGameSession()
 void InitGamePlay()
 {
     u8 bank, t;
+    u8 s;
     // Inicialitza pantalla de joc
     VDP_FillScreen_GM2(0);
      InitHudFontTiles();   // font per HUD
+
+    // Disable all sprites before starting game
+    for (s = 0; s < 32; s++)
+        VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
 
     // Draw HUD labels immediately (VDP_FillScreen_GM2 cleared name table,
     // and UpdateHUD's static vars still hold old values so won't redraw labels)
@@ -3024,12 +3031,16 @@ void main()
                   g_PausedFlag = !g_PausedFlag;
               p_key_was_pressed = p_key_pressed;
 
-              // Quit to menu with redefinable key (joystick: no quit button)
-              if (INPUT_QUIT())
-             {
-                 soundStopAll();
-                 g_GameState = GS_TITLE;
-                 g_TitleMode = TS_MENU;
+               // Quit to menu with redefinable key (joystick: no quit button)
+               if (INPUT_QUIT())
+              {
+                  u8 s;
+                  soundStopAll();
+                  // Disable all sprites (ship, enemies, explosions)
+                  for (s = 0; s < 32; s++)
+                      VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
+                  g_GameState = GS_TITLE;
+                  g_TitleMode = TS_MENU;
                  g_TitleDirty = 1;
                  g_TitlePhase = 0;
              }
