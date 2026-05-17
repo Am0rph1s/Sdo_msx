@@ -36,19 +36,12 @@
 
 Wall tiles change color per biome (CPC palette indices 8,9). Star colors are fixed.
 
-### HUD Layout
+### HUD System
 
-```
-Row 0: SCORE (label)
-Row 1: 00000  (value)
-Row 3: BONUS (label, temporary)
-Row 4: Xn    (wave bonus multiplier)
-Row 6: LEVEL (label)
-Row 7: nn    (value)
-Row 9: LIVES (label)
-Row 10: n    (value)
-Row 13: HP + bar (boss only)
-```
+- **`UpdateHUD()`**: Uses static vars to track last drawn values. Only redraws changed elements. On first call (`last_score == 0xFFFF`), draws all labels ("SCORE", "LEVEL", "LIVES").
+- **`HudDrawText()`**: Batches tile writes into a 32-byte buffer, then calls `VDP_WriteVRAM()` in one shot per row (instead of individual `VDP_Poke_GM2` calls). Supports line wrapping at column 32.
+- **`g_HudDirty` flag**: Set to 1 when HUD needs updating. `UpdateHUD()` clears it after drawing.
+- **Bonus display**: `g_BonusDisplayCnt` decrements each frame; `g_HudDirty` is set only when counter reaches 0 (bonus disappears), not every frame.
 
 ---
 
