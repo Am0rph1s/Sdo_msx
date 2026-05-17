@@ -13,36 +13,60 @@ static const u8 g_Trampoline[] = {
 };
 
 //=============================================================================
-// INTRO MUSIC - converted from CPC loader.s (3-channel PSG melody)
-// CPC clock ~1.77MHz, MSX ~3.58MHz -> periods scaled x2
-// Volumes: A=11, B=10, C=7 (from mt_apply_chs)
+// INTRO MUSIC - simple looping arpeggio for MSX PSG
+// AY-3-8910: Freq = 3579545 / (16 * Period)
+// Periods calculated for pleasant notes
 //=============================================================================
 
-// Music data - extracted from CPC loader.s, periods scaled x2 for MSX
-static const u16 g_MusicDur[46] = {
-    16,15,15,16,15,15,16,20,16,15,15,16,20,16,16,16,
-    15,15,16,20,16,16,16,15,15,16,20,18,16,15,16,18,
-    25,0,0,0,0,0,0,0,0,0,0,0,0,0
+// Note periods for MSX (3.58MHz PSG)
+// C3=956, D3=852, E3=758, F3=716, G3=638, A3=568, B3=506
+// C4=478, D4=426, E4=379, F4=358, G4=319, A4=284, B4=253
+// C5=239, D5=213, E5=190, G5=160, A5=142
+
+static const u16 g_MusicDur[38] = {
+    20,20,20,20, 20,20,20,20,
+    20,20,20,20, 20,20,20,20,
+    20,20,20,20, 20,20,20,20,
+    20,20,20,20, 20,20,20,20,
+    40,40,40,40, 0,0
 };
-static const u16 g_MusicA[46] = {
-    248,248,248,478,56,90,248,248,248,248,248,478,56,90,248,248,
-    478,478,478,426,56,90,248,478,478,478,426,56,90,248,426,478,
-    248,0,0,0,0,0,0,0,0,0,0,0,0,0
+static const u16 g_MusicA[38] = {
+    478,478,478,478,
+    319,319,319,319,
+    284,284,284,284,
+    358,358,358,358,
+    478,478,478,478,
+    319,319,319,319,
+    478,426,379,358,
+    478,478,478,478,
+    956,956,956,956, 0,0
 };
-static const u16 g_MusicB[46] = {
-    496,496,496,252,252,252,496,496,496,496,496,252,252,252,496,496,
-    252,252,252,496,252,252,496,252,252,252,496,496,252,496,252,252,
-    496,0,0,0,0,0,0,0,0,0,0,0,0,0
+static const u16 g_MusicB[38] = {
+    956,956,956,956,
+    638,638,638,638,
+    568,568,568,568,
+    716,716,716,716,
+    956,956,956,956,
+    638,638,638,638,
+    956,852,758,716,
+    956,956,956,956,
+    478,478,478,478, 0,0
 };
-static const u16 g_MusicC[46] = {
-    164,164,164,292,248,126,164,164,164,164,164,292,248,126,164,164,
-    292,292,292,340,248,126,164,292,292,292,340,248,126,164,340,292,
-    164,0,0,0,0,0,0,0,0,0,0,0,0,0
+static const u16 g_MusicC[38] = {
+    716,716,716,716,
+    478,478,478,478,
+    426,426,426,426,
+    538,538,538,538,
+    716,716,716,716,
+    478,478,478,478,
+    716,638,568,538,
+    716,716,716,716,
+    0,0,0,0, 0,0
 };
-#define MUSIC_NSTEPS 46
-#define MUSIC_VOL_A 11
-#define MUSIC_VOL_B 10
-#define MUSIC_VOL_C 7
+#define MUSIC_NSTEPS 38
+#define MUSIC_VOL_A 10
+#define MUSIC_VOL_B 8
+#define MUSIC_VOL_C 5
 
 static void MusicTick(u8 step)
 {
@@ -81,7 +105,6 @@ static void MusicSilence(void)
 
 void main()
 {
-    u16 t;
     u8 i;
     u8* dst;
     const u8* src;
@@ -107,10 +130,9 @@ void main()
     for (i = 0; i < 32; i++)
         VDP_SetSpritePositionY(i, VDP_SPRITE_DISABLE_SM1);
 
-    // Music + wait loop
+    // Music + wait loop (infinite until key pressed)
     MusicTick(0);
-    t = 0;
-    while (t < 300)
+    while (1)
     {
         Halt();
         mFrame++;
@@ -118,13 +140,16 @@ void main()
         {
             mFrame = 0;
             mStep++;
-            if (mStep >= MUSIC_NSTEPS) { mStep = 0; }  // Loop
+            if (g_MusicDur[mStep] == 0) { mStep = 0; }  // Loop on terminator
             MusicTick(mStep);
         }
-        if (IS_KEY_PRESSED(Keyboard_Read(8), KEY_SPACE) ||
-            IS_KEY_PRESSED(Keyboard_Read(5), KEY_Z))
-            break;
-        t++;
+        // Check for key press
+        u8 kbd = Keyboard_Read(8);
+        if (IS_KEY_PRESSED(kbd, KEY_SPACE)) break;
+        kbd = Keyboard_Read(5);
+        if (IS_KEY_PRESSED(kbd, KEY_Z)) break;
+        // Also check joystick
+        if ((Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0) break;
     }
 
     MusicSilence();
