@@ -3151,7 +3151,7 @@ void main()
                  for (i = 0; i < MAX_ENEMY_SHOTS && spr < 18; i++)
                      if (g_EnemyShots[i].active)
                      {
-                         g_SprBuf[spr*4+0] = g_EnemyShots[i].y;  g_SprBuf[spr*4+1] = g_EnemyShots[i].x;  g_SprBuf[spr*4+2] = g_EnemyShots[i].pattern;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED;
+                         g_SprBuf[spr*4+0] = g_EnemyShots[i].y;  g_SprBuf[spr*4+1] = g_EnemyShots[i].x;  g_SprBuf[spr*4+2] = g_EnemyShots[i].pattern;  g_SprBuf[spr*4+3] = COLOR_LIGHT_YELLOW;
                          spr++;
                      }
 
