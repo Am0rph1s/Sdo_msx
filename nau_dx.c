@@ -161,8 +161,8 @@
 #define HUD_FONT_COLOR_NRM  0x31  // Light Green (3) on Black (1)
 #define HUD_FONT_COLOR_HI   0xF1  // White (15) on Black (1)
 #define HUD_FONT_COLOR_CYN  0x71  // Cyan (7) on Black
-#define HLINE_TILE         136   // Tile for cyan separator lines (NOT 167 - conflicts with HI font space!)
-#define BAR_FILL_TILE      135   // Tile for boss HP bar fill
+#define HLINE_TILE         124   // Tile for cyan separator lines (free slot, outside all ranges)
+#define BAR_FILL_TILE      125   // Tile for boss HP bar fill (free slot, was 135 = "E" overlap!)
 
 // HUD right-side layout (columns 22-31)
 #define HUD_COL 22
@@ -561,9 +561,11 @@ void UpdateWallScroll()
 // STAR_TILE_BLANK = tile buit per esborrar
 //=============================================================================
 
-#define STAR_TILE_BASE_1  210   // tiles 210-217: capa lenta  - blau fosc  (0x41)
-#define STAR_TILE_BASE_2  218   // tiles 218-225: capa mitja  - blau clar  (0x51)
-#define STAR_TILE_BASE_3  226   // tiles 226-233: capa rapida - blanc      (0xF1)
+#define MENU_STAR_TILE_BASE 204   // 8 tiles for menu star states (204-211)
+
+#define STAR_TILE_BASE_1  212   // tiles 212-219: capa lenta  - blau fosc  (0x41)
+#define STAR_TILE_BASE_2  220   // tiles 220-227: capa mitja  - blau clar  (0x51)
+#define STAR_TILE_BASE_3  228   // tiles 228-235: capa rapida - blanc      (0xF1)
 
 void InitStarTilesForBase(u8 base, u8 inkColor)
 {
@@ -2226,7 +2228,6 @@ void RedrawHsInput()
 // Menu starfield - keep stars outside text/hline columns because twinkle rewrites tiles
 #define MENU_STAR_N         40
 #define MENU_STAR_CN        12   // estrelles centrals per TOP3/HELP
-#define MENU_STAR_TILE_BASE 204
 #define MENU_TWINKLE_FRAMES 4
 
 static const u8 g_MenuStarX[MENU_STAR_N] = {
