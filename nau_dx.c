@@ -703,87 +703,54 @@ static void AddScore(u16 points)
 
 void UpdateHUD()
 {
-    static u16 last_score = 0xFFFF;
-    static u8 last_level = 0xFF;
-    static u8 last_lives = 0xFF;
-    static u8 last_bonus_visible = 0xFF;
-    static u8 last_bonus_wave = 0xFF;
-    static u8 last_has_boss = 0xFF;
-    static u8 last_boss_filled = 0xFF;
     u8 i, t;
-    u8 full;
-    u8 bonus_visible;
     u8 has_boss = 0;
     u8 cur_hp = 0;
     u8 max_hp = 0;
     u8 boss_filled = 0;
+    u16 s;
+    char buf[6];
 
     if (!g_HudDirty) return;
 
-    // Force full redraw if this is first call after game init (score was reset to 0)
-    full = (last_score == 0xFFFF) || (g_Score == 0 && last_score != 0);
-    if (full) { last_score = 0xFFFF; last_level = 0xFF; last_lives = 0xFF; last_bonus_visible = 0xFF; last_has_boss = 0xFF; last_boss_filled = 0xFF; }
-
     // Score (rows 0-1)
-    if (full || last_score != g_Score)
-    {
-        u16 s = g_Score;
-        char buf[6];
-        if (full) HudDrawText(HUD_COL, 0, "SCORE", HUD_FONT_COLOR_NRM);
-        buf[4] = (char)('0' + s % 10); s /= 10;
-        buf[3] = (char)('0' + s % 10); s /= 10;
-        buf[2] = (char)('0' + s % 10); s /= 10;
-        buf[1] = (char)('0' + s % 10); s /= 10;
-        buf[0] = (char)('0' + s % 10);
-        buf[5] = 0;
-        HudDrawText(HUD_COL, 1, buf, HUD_FONT_COLOR_HI);
-        last_score = g_Score;
-    }
+    HudDrawText(HUD_COL, 0, "SCORE", HUD_FONT_COLOR_NRM);
+    s = g_Score;
+    buf[4] = (char)('0' + s % 10); s /= 10;
+    buf[3] = (char)('0' + s % 10); s /= 10;
+    buf[2] = (char)('0' + s % 10); s /= 10;
+    buf[1] = (char)('0' + s % 10); s /= 10;
+    buf[0] = (char)('0' + s % 10);
+    buf[5] = 0;
+    HudDrawText(HUD_COL, 1, buf, HUD_FONT_COLOR_HI);
 
-    // Wave bonus (rows 3-4) - nomes es mostra breument al completar wave
-    bonus_visible = (g_BonusDisplayCnt > 0) ? 1 : 0;
-    if (full || last_bonus_visible != bonus_visible || (bonus_visible && last_bonus_wave != g_WaveTotal))
+    // Wave bonus (rows 3-4)
+    if (g_BonusDisplayCnt > 0)
     {
-        if (bonus_visible)
-        {
-            char buf[4];
-            HudDrawText(HUD_COL, 3, "BONUS", HUD_FONT_COLOR_NRM);
-            buf[0] = 'X';
-            buf[1] = (char)('0' + g_WaveTotal);
-            buf[2] = 0;
-            HudDrawText(HUD_COL, 4, buf, HUD_FONT_COLOR_HI);
-        }
-        else
-        {
-            HudDrawText(HUD_COL, 3, "     ", HUD_FONT_COLOR_NRM);
-            HudDrawText(HUD_COL, 4, "     ", HUD_FONT_COLOR_NRM);
-        }
-        last_bonus_visible = bonus_visible;
-        last_bonus_wave = g_WaveTotal;
+        HudDrawText(HUD_COL, 3, "BONUS", HUD_FONT_COLOR_NRM);
+        buf[0] = 'X';
+        buf[1] = (char)('0' + g_WaveTotal);
+        buf[2] = 0;
+        HudDrawText(HUD_COL, 4, buf, HUD_FONT_COLOR_HI);
+    }
+    else
+    {
+        HudDrawText(HUD_COL, 3, "     ", HUD_FONT_COLOR_NRM);
+        HudDrawText(HUD_COL, 4, "     ", HUD_FONT_COLOR_NRM);
     }
 
     // Level (rows 6-7)
-    if (full || last_level != g_Level)
-    {
-        char buf[3];
-        if (full) HudDrawText(HUD_COL, 6, "LEVEL", HUD_FONT_COLOR_NRM);
-        buf[0] = (char)('0' + g_Level / 10);
-        buf[1] = (char)('0' + g_Level % 10);
-        buf[2] = 0;
-        HudDrawText(HUD_COL, 7, buf, HUD_FONT_COLOR_HI);
-        last_level = g_Level;
-    }
+    HudDrawText(HUD_COL, 6, "LEVEL", HUD_FONT_COLOR_NRM);
+    buf[0] = (char)('0' + g_Level / 10);
+    buf[1] = (char)('0' + g_Level % 10);
+    buf[2] = 0;
+    HudDrawText(HUD_COL, 7, buf, HUD_FONT_COLOR_HI);
 
     // Lives (rows 9-10)
-    if (full || last_lives != g_Lives)
-    {
-        char buf[2];
-        if (full) HudDrawText(HUD_COL, 9, "LIVES", HUD_FONT_COLOR_NRM);
-        buf[0] = (char)('0' + g_Lives);
-        buf[1] = 0;
-        HudDrawText(HUD_COL, 10, buf, HUD_FONT_COLOR_HI);
-        last_lives = g_Lives;
-    }
+    HudDrawText(HUD_COL, 9, "LIVES", HUD_FONT_COLOR_NRM);
+    buf[0] = (char)('0' + g_Lives);
+    buf[1] = 0;
+    HudDrawText(HUD_COL, 10, buf, HUD_FONT_COLOR_HI);
 
     // Boss HP bar (row 13+, only during boss waves)
     for (i = 0; i < MAX_ENEMIES; i++)
@@ -800,20 +767,14 @@ void UpdateHUD()
     {
         if (!max_hp) max_hp = GetBossMaxHP(BossTierFromLevel(g_Level));
         boss_filled = (u8)((u16)cur_hp * 5u / max_hp);
-        if (full || last_has_boss != has_boss || last_boss_filled != boss_filled)
-        {
-            if (full || last_has_boss != has_boss) HudDrawText(HUD_COL, 13, "HP", HUD_FONT_COLOR_HI);
-            for (t = 0; t < 5; t++)
-                VDP_Poke_GM2((u8)(HUD_COL + 3 + t), 13, (t < boss_filled) ? BAR_FILL_TILE : 0);
-        }
+        HudDrawText(HUD_COL, 13, "HP", HUD_FONT_COLOR_HI);
+        for (t = 0; t < 5; t++)
+            VDP_Poke_GM2((u8)(HUD_COL + 3 + t), 13, (t < boss_filled) ? BAR_FILL_TILE : 0);
     }
-    else if (full || last_has_boss != has_boss)
+    else
     {
-        // Clear HP area if boss inactive
         HudDrawText(HUD_COL, 13, "          ", HUD_FONT_COLOR_NRM);
     }
-    last_has_boss = has_boss;
-    last_boss_filled = boss_filled;
 
     g_HudDirty = 0;
 }
@@ -3041,9 +3002,11 @@ void main()
                       VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
                   g_GameState = GS_TITLE;
                   g_TitleMode = TS_MENU;
-                 g_TitleDirty = 1;
-                 g_TitlePhase = 0;
-             }
+                  g_TitleDirty = 1;
+                  g_TitlePhase = 0;
+                  // Skip rest of game frame, go directly to menu rendering
+                  goto quit_to_menu;
+              }
 
              // Wall scroll + starfield (always update)
              UpdateWallScroll();
@@ -3264,7 +3227,9 @@ void main()
                    else
                        EnterPostGame(0);
                }
-               soundTick();  // Cada frame, sempre (fins i tot al menu/pausa)
-         }
-    }
+                 soundTick();  // Cada frame, sempre (fins i tot al menu/pausa)
+           }
+quit_to_menu:
+          ;
+     }
 }
