@@ -1,6 +1,6 @@
 ProjName = "nau_dx_intro";
 ProjModules = [ "nau_dx_intro" ];
-LibModules = [ "system", "bios", "vdp", "print", "input" ];
+LibModules = [ "system", "bios", "vdp", "print", "input", "psg" ];
 Machine = "1";
 Target = "ROM_ASCII16";
 ROMSize = 64;
