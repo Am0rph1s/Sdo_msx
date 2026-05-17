@@ -52,7 +52,7 @@
 
 // Enemy speeds - 1:1 CPC (adaptats a MSX: CPC té 50Hz i pixels més grans)
 #define ENEMY_SPEED_BASIC   2
-#define ENEMY_SPEED_FAST    5
+#define ENEMY_SPEED_FAST    3
 #define ENEMY_SPEED_HEAVY   2
 #define ENEMY_SPEED_DIVER   3
 #define ENEMY_SPEED_BOMBER  2
