@@ -2891,6 +2891,12 @@ void InitGamePlay()
     // Inicialitza pantalla de joc
     VDP_FillScreen_GM2(0);
      InitHudFontTiles();   // font per HUD
+
+    // Draw HUD labels immediately (VDP_FillScreen_GM2 cleared name table,
+    // and UpdateHUD's static vars still hold old values so won't redraw labels)
+    HudDrawText(HUD_COL, 0, "SCORE", HUD_FONT_COLOR_NRM);
+    HudDrawText(HUD_COL, 6, "LEVEL", HUD_FONT_COLOR_NRM);
+    HudDrawText(HUD_COL, 9, "LIVES", HUD_FONT_COLOR_NRM);
     // Precarrega patro de barra HP (tile 135, càrrega única)
     {
         u8 bar_col[8];
