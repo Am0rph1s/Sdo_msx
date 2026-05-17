@@ -659,6 +659,7 @@ void sfxLevelUp(void);
 void sfxEnemyShot(void);
 void sfxBeep(void);
 void EnterPostGame(u8 won);
+void InitGamePlay(void);
 static u8 BossTierFromLevel(u8 lv);
 
 
@@ -3051,7 +3052,7 @@ void main()
                         if (INPUT_DOWN()  && g_ShipY < SHIP_MAX_Y) { g_ShipY += g_ShipSpeedY; thrust_now = 1; }
                         g_ShipThrust = thrust_now;
 
-                       if ((INPUT_FIRE() || IS_KEY_PRESSED(row8, KEY_SPACE)) && g_FireCooldown == 0)
+                       if (INPUT_FIRE() && g_FireCooldown == 0)
                      {
                          for (i = 0; i < MAX_SHOTS; i++)
                          {
