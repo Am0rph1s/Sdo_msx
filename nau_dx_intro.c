@@ -1,6 +1,5 @@
 // Intro independent - sense joc
 #include "msxgl.h"
-#include "compress/pletter.h"
 
 // Trampoline code that will be copied to RAM
 // Must be position-independent
@@ -17,6 +16,7 @@ void main()
     u16 t;
     u8 i;
     u8* dst;
+    const u8* src;
 
     // Init VDP
     VDP_SetMode(VDP_MODE_GRAPHIC2);
@@ -24,8 +24,14 @@ void main()
     VDP_ClearVRAM();
     VDP_SetSpriteFlag(VDP_SPRITE_SIZE_16);
 
-    // Bank 1 ja mostra segment 1 (SC2 data per defecte)
-    Pletter_UnpackToVRAM((const u8*)0x8000, 0x0000);
+    // Copy raw SC2 data directly to VRAM (no compression)
+    // Raw data is at ROM address 0x8000 (segment 1), 16384 bytes
+    // Pattern table: 8192 bytes at VRAM 0x0000
+    src = (const u8*)0x8000;
+    VDP_WriteVRAM(src, 0x0000, 0x0000, 8192);
+    // Color table: 6144 bytes at VRAM 0x2000
+    src = (const u8*)0xA000;
+    VDP_WriteVRAM(src, 0x2000, 0x0000, 6144);
 
     // Disable sprites
     for (i = 0; i < 32; i++)
