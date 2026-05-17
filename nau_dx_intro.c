@@ -24,8 +24,8 @@ void main()
     VDP_ClearVRAM();
     VDP_SetSpriteFlag(VDP_SPRITE_SIZE_16);
 
-    // Bank 1 ja mostra segment 1 (SC2 data per defecte)
-    Pletter_UnpackToVRAM((const u8*)0x8000, 0x0000);
+    // Unpack SC2 to VRAM (skip 7-byte BLOAD header: FE 37 00 00 00 00 00)
+    Pletter_UnpackToVRAM((const u8*)0x8007, 0x0000);
 
     // Disable sprites
     for (i = 0; i < 32; i++)
