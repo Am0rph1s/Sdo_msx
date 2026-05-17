@@ -52,8 +52,8 @@
 
 // Enemy speeds - 1:1 CPC (adaptats a MSX: CPC té 50Hz i pixels més grans)
 #define ENEMY_SPEED_BASIC   2
-#define ENEMY_SPEED_FAST    2
-#define ENEMY_SPEED_HEAVY   1
+#define ENEMY_SPEED_FAST    5
+#define ENEMY_SPEED_HEAVY   2
 #define ENEMY_SPEED_DIVER   3
 #define ENEMY_SPEED_BOMBER  2
 #define ENEMY_SPEED_BOSS    1   // Boss moves at 1 px/frame vertically
@@ -73,7 +73,7 @@
 
 // Wave system - 1:1 CPC
 #define WAVE_PLAN_MAX       8
-#define WAVE_MAX_HEAVY_PER_WAVE 5
+#define WAVE_MAX_HEAVY_PER_WAVE 3
 #define DIVER_WAVE_MIN      5
 #define DIVER_WAVE_MAX      8
 #define WAVE_MODE_RANK      0
@@ -96,7 +96,6 @@
 
 // Boss tiers - 1:1 CPC
 #define BOSS_HP_BASE         15
-#define BOSS_TIER_LEVEL_5    0
 #define BOSS_HP_PER_TIER     5
 #define BOSS_LANE_W          ((u8)(GAME_W / 3u))  // CPC: screen/3 per lane
 #define BOSS_HOLD_Y          58   // CPC: 74, nosaltres 58 (mes amunt)
@@ -106,9 +105,6 @@
 #define BOSS_VOSC_DESC       0
 #define BOSS_VOSC_UP         1
 #define BOSS_VOSC_DOWN       2
-#define BOSS_TIER_LEVEL_15   2
-#define BOSS_TIER_LEVEL_20   3
-#define BOSS_TIER_LEVEL_25   4
 #define BOSS_TIERS_MAX       5
 
 // Enemies
@@ -184,10 +180,8 @@ u8 IsKeyPressed(u8 key) { return IS_KEY_PRESSED(Keyboard_Read(key & 0x0F), key);
 #define INPUT_UP()     (g_ControlMode ? IsKeyPressed(g_KeyUp)     : (JOY_DIR() & JOY_INPUT_DIR_UP))
 #define INPUT_DOWN()   (g_ControlMode ? IsKeyPressed(g_KeyDown)   : (JOY_DIR() & JOY_INPUT_DIR_DOWN))
 #define INPUT_FIRE()   (g_ControlMode ? IsKeyPressed(g_KeyFire)   : JOY_FIRE())
-#define INPUT_PAUSE()  (g_ControlMode ? IsKeyPressed(g_KeyPause)  : (Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_B) == 0)
-#define INPUT_QUIT()   (g_ControlMode ? IsKeyPressed(g_KeyQuit)   : 0)
-// Barra HP del boss - patro i color (static const perque es carrega a InitGamePlay)
-
+#define INPUT_PAUSE()  (IsKeyPressed(g_KeyPause) || ((Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_B) == 0))
+#define INPUT_QUIT()   (IsKeyPressed(g_KeyQuit))
 
 // Hi-scores
 #define HISCORE_COUNT    3
@@ -246,8 +240,8 @@ typedef struct { u8 waves; u8 per_wave; u8 mask; u8 flags; u8 intro_mask; } TLev
 //=============================================================================
 
 static u8  g_ShipX, g_ShipY;
-static u8  g_ShipSpeedX = 3;
-static u8  g_ShipSpeedY = 3;
+static const u8  g_ShipSpeedX = 3;
+static const u8  g_ShipSpeedY = 3;
 static u8  g_ShipExploding  = 0;
 static u8  g_ShipExplTimer  = 0;
 static u8  g_ShipInvul      = 0;
@@ -315,7 +309,7 @@ static u8  g_SpawnTimer    = SPAWN_FIRST_DELAY;
 static u8  g_WaveIndianDelay = 0;
 static u8  g_BonusDisplayCnt = 0;  // Comptador per mostrar "XN" al completar wave
 static u16 g_WaveBonusBase = 10;
-static u8  g_SprBuf[138];  // Sprite attribute buffer (32 × 4 bytes)
+static u8  g_SprBuf[128];  // Sprite attribute buffer (32 × 4 bytes)
 static u8  g_WaveSlotX[WAVE_PLAN_MAX];
 static u8  g_WaveSlotY[WAVE_PLAN_MAX];
 static u8  g_WaveSlotType[WAVE_PLAN_MAX];
@@ -326,7 +320,6 @@ static u8  g_DualBossAimLock = 0;
 
 #define SHIP_SPAWN_X  (GAME_X0 + GAME_W / 2 - SHIP_W / 2)
 #define SHIP_SPAWN_Y  (SCREEN_H - SHIP_H - 8)
-// Valors 1:1 del CPC (la segona definicio, eliminem la duplicada)
 
 // Starfield
 static TStar g_S1[N1];
@@ -1444,25 +1437,6 @@ static u8 BossBulletVyFromTier(u8 tier)
     return v;
 }
 
-void SpawnEnemyShot(u8 ex, u8 ey, u8 enemy_type)
-{
-    u8 i;
-    u8 pat = (enemy_type == ENEMY_TYPE_BOMBER) ? 88 : 12;
-    for (i = 0; i < MAX_ENEMY_SHOTS; i++)
-    {
-        if (!g_EnemyShots[i].active)
-        {
-            g_EnemyShots[i].x       = ex + ENEMY_W / 2 - 1;
-            g_EnemyShots[i].y       = ey + ENEMY_H;
-            g_EnemyShots[i].vx      = enemyShotAimVX(ex + ENEMY_W / 2 - 1);
-            g_EnemyShots[i].vy      = ENEMYSHOT_SPEED_Y;
-            g_EnemyShots[i].pattern = pat;
-            g_EnemyShots[i].active  = 1;
-            return;
-        }
-    }
-}
-
 static void SpawnEnemyBullet(u8 xspawn, u8 yspawn, i8 vx, u8 vy, u8 type)
 {
     u8 k = AllocEnemyShotSlot();
@@ -1574,7 +1548,6 @@ static void BossFireVolley(u8 i)
     if (tier >= 3 && pat == 2) cd = (u8)(cd + 3u);
     g_Enemies[i].fire_cd = cd;
 }
-void SpawnEnemyShot(u8 ex, u8 ey, u8 enemy_type);
 
 void UpdateEnemies()
 {
@@ -1764,8 +1737,6 @@ void UpdateEnemies()
 }
 
 //=============================================================================
-// COLLISIONS
-//=============================================================================
 // SOUND FX - 1:1 CPC (AY-3-8910 / YM2149)
 //=============================================================================
 
@@ -1919,8 +1890,6 @@ void soundTick(void) {
     updateMixer();
 }
 
-//=============================================================================
-// COLLISIONS + SHIP HIT
 //=============================================================================
 // COLLISIONS + SHIP HIT
 //=============================================================================
@@ -2167,10 +2136,6 @@ void HsInsert(u8 pos, u16 score, u8 level, u8* name)
     g_HiScores[pos].name[2] = name[2];
 }
 
-// Forward declarations per poder usar HudDrawText abans de la seva definicio
-void HudDrawText(u8 col, u8 row, const char* s, u8 colorByte);
-void HudDrawHLine(u8 col, u8 row, u8 len, u8 colorByte);
-
 void DrawHiScoreTable(u8 inputPos)
 {
     u8 i;
@@ -2260,7 +2225,7 @@ void RedrawHsInput()
 
 // Menu starfield - keep stars outside text/hline columns because twinkle rewrites tiles
 #define MENU_STAR_N         40
-#define MENU_STAR_CN        13   // estrelles centrals per TOP3/HELP
+#define MENU_STAR_CN        12   // estrelles centrals per TOP3/HELP
 #define MENU_STAR_TILE_BASE 204
 #define MENU_TWINKLE_FRAMES 4
 
@@ -2586,6 +2551,7 @@ void UpdateMenuInput()
         }
         else if (fire)
         {
+            InitGamePlay();
             g_GameState  = GS_PLAYING;
             sfxMenuSelect();
         }
@@ -2775,11 +2741,11 @@ void UpdateMenuInput()
     if (g_TitleMode == TS_MENU)
     {
         DrawLogo();
-        HudDrawHLine(0, 4, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(3, 4, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(11, 6, "1 JOYSTICK", g_ControlMode == 0 ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM);
         HudDrawText(11, 8, "2 KEYBOARD", g_ControlMode == 1 ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM);
         HudDrawText(11,10, "3 SET KEYS", HUD_FONT_COLOR_NRM);
-        HudDrawHLine(0, 13, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(3, 13, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(9, 15, "FIRE TO START", HUD_FONT_COLOR_HI);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
@@ -2788,9 +2754,9 @@ void UpdateMenuInput()
     {
         // 1:1 CPC: top 3 SENSE logo, amb estrelles centrals
         HudDrawText(13, 8, "TOP  3", HUD_FONT_COLOR_HI);
-        HudDrawHLine(0,  9, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(3,  9, 26, HUD_FONT_COLOR_CYN);
         DrawHiScoreTable(0xFF);
-        HudDrawHLine(0, 16, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(3, 16, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
     }
@@ -2798,9 +2764,9 @@ void UpdateMenuInput()
     {
         HudDrawText(11, 6, "GAME OVER", HUD_FONT_COLOR_HI);
         HudDrawText(13, 8, "TOP 3",     HUD_FONT_COLOR_HI);
-        HudDrawHLine(0,  9, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(3,  9, 26, HUD_FONT_COLOR_CYN);
         DrawHiScoreTable(0xFF);
-        HudDrawHLine(0, 16, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(3, 16, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(9, 18, "PRESS ANY KEY", HUD_FONT_COLOR_HI);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
@@ -2808,14 +2774,14 @@ void UpdateMenuInput()
     else if (g_TitleMode == TS_HELP)
     {
         HudDrawText(10, 3, "HOW TO PLAY", HUD_FONT_COLOR_HI);
-        HudDrawHLine(0,  4, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(3,  4, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(5, 5,  "JOY OR ARROWS TO MOVE",    HUD_FONT_COLOR_NRM);
         HudDrawText(6, 7,  "Z OR FIRE 1 TO SHOOT",     HUD_FONT_COLOR_NRM);
         HudDrawText(11, 9,  "P TO PAUSE",               HUD_FONT_COLOR_NRM);
         HudDrawText(6,11,  "Q OR RETURN TO QUIT",       HUD_FONT_COLOR_NRM);
         HudDrawText(3,13,  "EXTRA LIFE EVERY 5000 PTS", HUD_FONT_COLOR_NRM);
         HudDrawText(4,15,  "COMPLETE WAVE FOR BONUS",   HUD_FONT_COLOR_NRM);
-        HudDrawHLine(0, 17, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(3, 17, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(10, 19, "FIRE TO MENU", HUD_FONT_COLOR_HI);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
@@ -2823,11 +2789,11 @@ void UpdateMenuInput()
     else if (g_TitleMode == TS_WIN)
     {
         DrawLogo();
-        HudDrawHLine(0,  4, 32, HUD_FONT_COLOR_NRM);
+        HudDrawHLine(3,  4, 26, HUD_FONT_COLOR_NRM);
         HudDrawText(8,  6, "CONGRATULATIONS",       HUD_FONT_COLOR_HI);
         HudDrawText(6,  8, "THE INVASION IS OVER",  HUD_FONT_COLOR_NRM);
         HudDrawText(5, 10, "THANK YOU FOR PLAYING", HUD_FONT_COLOR_NRM);
-        HudDrawHLine(0, 13, 32, HUD_FONT_COLOR_NRM);
+        HudDrawHLine(3, 13, 26, HUD_FONT_COLOR_NRM);
         HudDrawText(6, 20, "PRESS FIRE TO MENU", HUD_FONT_COLOR_HI);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
@@ -2837,9 +2803,9 @@ void UpdateMenuInput()
         // 1:1 CPC: GAME OVER + TOP3 + taula amb input directe
         HudDrawText(11, 4, "GAME OVER", HUD_FONT_COLOR_HI);
         HudDrawText(13, 6, "TOP 3",     HUD_FONT_COLOR_HI);
-        HudDrawHLine(0,  7, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(3,  7, 26, HUD_FONT_COLOR_CYN);
         DrawHiScoreTable(g_HsPos);  // Edita directament a la fila corresponent
-        HudDrawHLine(0, 16, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(3, 16, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
     }
@@ -2847,7 +2813,7 @@ void UpdateMenuInput()
     {
         static const char* const key_names[7] = {"LEFT","RIGHT","UP","DOWN","FIRE","PAUSE","QUIT"};
         HudDrawText(13, 6,  "SET KEYS",   HUD_FONT_COLOR_HI);
-        HudDrawHLine(0,  8, 32, HUD_FONT_COLOR_CYN);
+        HudDrawHLine(3,  8, 26, HUD_FONT_COLOR_CYN);
         if (g_RedefineStep < 7)
             HudDrawText(13, 13, key_names[g_RedefineStep], HUD_FONT_COLOR_HI);
         HudDrawText(10, 16, "PRESS A KEY", HUD_FONT_COLOR_NRM);
@@ -2908,6 +2874,8 @@ void ResetGameSession()
     g_HudDirty    = 1;
     g_ShipLastLife = 0;
     g_GameOverDelay = 0;
+    g_WallPhase = 0;
+    g_WallPhaseTimer = 0;
     InitEnemies();
     // 1:1 CPC: initShots - neteja trets vells que poden surar de la partida anterior
     for (i = 0; i < MAX_SHOTS; i++) g_Shots[i].active = 0;
@@ -2920,7 +2888,7 @@ void InitGamePlay()
     u8 bank, t;
     // Inicialitza pantalla de joc
     VDP_FillScreen_GM2(0);
-    InitHudFontTiles();   // Recarrega font (sobreescrita per star tiles 168-170)
+     InitHudFontTiles();   // font per HUD
     // Precarrega patro de barra HP (tile 135, càrrega única)
     {
         u8 bar_col[8];
@@ -3004,8 +2972,8 @@ void main()
     while (1)
     {
         Halt();
-        row8 = Keyboard_Read(8);
-        row5 = Keyboard_Read(5);
+         row8 = Keyboard_Read(8);
+         row5 = Keyboard_Read(5);
 
          if (g_GameState == GS_TITLE)
          {
@@ -3062,10 +3030,10 @@ void main()
              UpdateWallScroll();
              switch (g_StarTimer1 & 3)
              {
-                 case 0: TickStars(g_S1, N1, 3, STAR_TILE_BASE_1); break;
-                 case 1: TickStars(g_S2, N2, 4, STAR_TILE_BASE_2); break;
-                 case 2: TickStars(g_S3, N3, 6, STAR_TILE_BASE_3); break;
-                 default: TickStars(g_S1, N1, 1, STAR_TILE_BASE_1); break;
+              case 0: TickStars(g_S1, N1, 3, STAR_TILE_BASE_1); break;
+              case 1: TickStars(g_S2, N2, 4, STAR_TILE_BASE_2); break;
+              case 2: TickStars(g_S3, N3, 6, STAR_TILE_BASE_3); break;
+              case 3: TickStars(g_S1, N1, 1, STAR_TILE_BASE_1); break;
              }
              g_StarTimer1++;
 
@@ -3159,9 +3127,8 @@ void main()
                  {
                      // Explosio 2 capes (blanc exterior + vermell interior)
                      u8 exp_pat_w, exp_pat_r;
-                     if (g_ShipExplTimer > 6) { exp_pat_w = 56; exp_pat_r = 60; }
-                     else if (g_ShipExplTimer > 3) { exp_pat_w = 60; exp_pat_r = 64; }
-                     else { exp_pat_w = 60; exp_pat_r = 64; }
+                      if (g_ShipExplTimer > 6) { exp_pat_w = 56; exp_pat_r = 60; }
+                      else { exp_pat_w = 60; exp_pat_r = 64; }
                      g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = exp_pat_w;  g_SprBuf[spr*4+3] = COLOR_WHITE;      spr++;
                      g_SprBuf[spr*4+0] = g_ShipY;  g_SprBuf[spr*4+1] = g_ShipX;  g_SprBuf[spr*4+2] = exp_pat_r;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
                  }
@@ -3242,8 +3209,8 @@ void main()
                      spr++;
                  }
 
-                 // Batch write all 32 sprites to VRAM en un sol cop
-                 VDP_WriteVRAM(g_SprBuf, g_SpriteAttributeLow, g_SpriteAttributeHigh, 138);
+                  // Batch write all 32 sprites to VRAM en un sol cop
+                  VDP_WriteVRAM(g_SprBuf, g_SpriteAttributeLow, g_SpriteAttributeHigh, 128);
               }
               else
               {
