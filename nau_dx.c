@@ -115,7 +115,7 @@
 #define ENEMY_BOSS_H       16
 #define ENEMYSHOT_W        1
 #define ENEMYSHOT_H        1
-#define ENEMYSHOT_SPEED_Y  4
+#define ENEMYSHOT_SPEED_Y  3
 #define ENEMYSHOT_COOLDOWN 18
 #define ENEMYSHOT_STAGGER  5
 #define ENEMYSHOT_VX_FAST  1
