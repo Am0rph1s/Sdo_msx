@@ -3178,26 +3178,39 @@ void main()
                      }
                  }
 
-                   // Enemies (darrere les explosions)
-                 {
-                     static const u8 etype_pat_w[5] = {16, 24, 32, 40, 48};
-                     static const u8 etype_pat_r[5] = {20, 28, 36, 44, 52};
-                     for (i = 0; i < MAX_ENEMIES && spr < 28; i++)
-                     {
-                         if (!g_Enemies[i].active) continue;
-                         j = g_Enemies[i].type;
-                         
-                         if (j == ENEMY_TYPE_BOSS)
-                         {
-                             g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = 72;  g_SprBuf[spr*4+3] = COLOR_CYAN;      spr++;
-                             g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = 76;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
-                         }
-                         else
-                         {
-                             g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = etype_pat_w[j];  g_SprBuf[spr*4+3] = COLOR_WHITE;      spr++;
-                             g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = etype_pat_r[j];  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
-                         }
-                     }
+                    // Enemies - WHITE layer first (shapes, high priority)
+                  {
+                      static const u8 etype_pat_w[5] = {16, 24, 32, 40, 48};
+                      for (i = 0; i < MAX_ENEMIES && spr < 28; i++)
+                      {
+                          if (!g_Enemies[i].active) continue;
+                          j = g_Enemies[i].type;
+                          if (j == ENEMY_TYPE_BOSS)
+                          {
+                              g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = 72;  g_SprBuf[spr*4+3] = COLOR_CYAN;      spr++;
+                          }
+                          else
+                          {
+                              g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = etype_pat_w[j];  g_SprBuf[spr*4+3] = COLOR_WHITE;      spr++;
+                          }
+                      }
+                  }
+                  // Enemies - RED layer last (details, lowest priority - discarded first on sprite overflow)
+                  {
+                      static const u8 etype_pat_r[5] = {20, 28, 36, 44, 52};
+                      for (i = 0; i < MAX_ENEMIES && spr < 28; i++)
+                      {
+                          if (!g_Enemies[i].active) continue;
+                          j = g_Enemies[i].type;
+                          if (j == ENEMY_TYPE_BOSS)
+                          {
+                              g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = 76;  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
+                          }
+                          else
+                          {
+                              g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = etype_pat_r[j];  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
+                          }
+                      }
                   }
 
                  // Desactiva sprites que sobren (Y=208 = off-screen)
