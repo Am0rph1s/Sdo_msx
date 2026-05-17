@@ -13,83 +13,41 @@ static const u8 g_Trampoline[] = {
 };
 
 //=============================================================================
-// INTRO MUSIC - simple looping arpeggio for MSX PSG
-// AY-3-8910: Freq = 3579545 / (16 * Period)
-// Periods calculated for pleasant notes
+// INTRO MUSIC - exact port of CPC playMenuCoin() from main_menu.c
+// CPC AY clock = 1MHz, MSX AY clock = 3.58MHz -> scale factor = 3.58
+// Original CPC periods: A={239,190,160,119}, B={190,160,119,95}, C={160,119,95,80}
+// Scaled for MSX: x3.58
 //=============================================================================
 
-// Note periods for MSX (3.58MHz PSG)
-// C3=956, D3=852, E3=758, F3=716, G3=638, A3=568, B3=506
-// C4=478, D4=426, E4=379, F4=358, G4=319, A4=284, B4=253
-// C5=239, D5=213, E5=190, G5=160, A5=142
-
-static const u16 g_MusicDur[38] = {
-    20,20,20,20, 20,20,20,20,
-    20,20,20,20, 20,20,20,20,
-    20,20,20,20, 20,20,20,20,
-    20,20,20,20, 20,20,20,20,
-    40,40,40,40, 0,0
-};
-static const u16 g_MusicA[38] = {
-    478,478,478,478,
-    319,319,319,319,
-    284,284,284,284,
-    358,358,358,358,
-    478,478,478,478,
-    319,319,319,319,
-    478,426,379,358,
-    478,478,478,478,
-    956,956,956,956, 0,0
-};
-static const u16 g_MusicB[38] = {
-    956,956,956,956,
-    638,638,638,638,
-    568,568,568,568,
-    716,716,716,716,
-    956,956,956,956,
-    638,638,638,638,
-    956,852,758,716,
-    956,956,956,956,
-    478,478,478,478, 0,0
-};
-static const u16 g_MusicC[38] = {
-    716,716,716,716,
-    478,478,478,478,
-    426,426,426,426,
-    538,538,538,538,
-    716,716,716,716,
-    478,478,478,478,
-    716,638,568,538,
-    716,716,716,716,
-    0,0,0,0, 0,0
-};
-#define MUSIC_NSTEPS 38
-#define MUSIC_VOL_A 10
-#define MUSIC_VOL_B 8
-#define MUSIC_VOL_C 5
+static const u16 g_MusicA[16] = {856,856,856, 680,680,680, 573,573,573, 426,426,426,426,426,426,426};
+static const u16 g_MusicB[16] = {680,680,680, 573,573,573, 426,426,426, 340,340,340,340,340,340,340};
+static const u16 g_MusicC[16] = {573,573,573, 426,426,426, 340,340,340, 286,286,286,286,286,286,286};
+#define MUSIC_NSTEPS 16
+#define MUSIC_VOL_A 15
+#define MUSIC_VOL_B 12
+#define MUSIC_VOL_C 9
 
 static void MusicTick(u8 step)
 {
     u16 per;
-    if (step >= MUSIC_NSTEPS) return;
 
     // Channel A
     per = g_MusicA[step];
     PSG_SetRegister(0, (u8)(per & 0xFF));
     PSG_SetRegister(1, (u8)((per >> 8) & 0x0F));
-    PSG_SetRegister(8, per ? MUSIC_VOL_A : 0);
+    PSG_SetRegister(8, (step < 12) ? MUSIC_VOL_A : 8);
 
     // Channel B
     per = g_MusicB[step];
     PSG_SetRegister(2, (u8)(per & 0xFF));
     PSG_SetRegister(3, (u8)((per >> 8) & 0x0F));
-    PSG_SetRegister(9, per ? MUSIC_VOL_B : 0);
+    PSG_SetRegister(9, (step < 12) ? MUSIC_VOL_B : 5);
 
     // Channel C
     per = g_MusicC[step];
     PSG_SetRegister(4, (u8)(per & 0xFF));
     PSG_SetRegister(5, (u8)((per >> 8) & 0x0F));
-    PSG_SetRegister(10, per ? MUSIC_VOL_C : 0);
+    PSG_SetRegister(10, (step < 12) ? MUSIC_VOL_C : 2);
 
     // Mixer: enable all 3 tone channels, disable noise
     PSG_SetRegister(7, 0x38);
@@ -108,8 +66,7 @@ void main()
     u8 i;
     u8* dst;
     const u8* src;
-    u8 mStep = 0;
-    u16 mFrame = 0;
+    u8 mStep;
 
     // Init VDP
     VDP_SetMode(VDP_MODE_GRAPHIC2);
@@ -130,19 +87,16 @@ void main()
     for (i = 0; i < 32; i++)
         VDP_SetSpritePositionY(i, VDP_SPRITE_DISABLE_SM1);
 
-    // Music + wait loop (infinite until key pressed)
-    MusicTick(0);
+    // Music + wait loop (exact CPC playMenuCoin timing: 1 step per VSYNC, looped)
+    mStep = 0;
     while (1)
     {
-        Halt();
-        mFrame++;
-        if (mFrame >= g_MusicDur[mStep])
-        {
-            mFrame = 0;
-            mStep++;
-            if (g_MusicDur[mStep] == 0) { mStep = 0; }  // Loop on terminator
-            MusicTick(mStep);
-        }
+        MusicTick(mStep);
+        mStep++;
+        if (mStep >= MUSIC_NSTEPS) { mStep = 0; }
+
+        Halt();  // Wait for VSYNC
+
         // Check for key press
         u8 kbd = Keyboard_Read(8);
         if (IS_KEY_PRESSED(kbd, KEY_SPACE)) break;
