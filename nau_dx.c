@@ -2474,7 +2474,8 @@ void UpdateMenuInput()
     u8 row0 = Keyboard_Read(0); // tecles 1, 2, 3
     u8 joy = ~Joystick_Read(JOY_PORT_1) & 0x0F;
     u8 joy_fire = (Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0;
-    u8 fire  = IS_KEY_PRESSED(row8, KEY_SPACE) || IS_KEY_PRESSED(row5, KEY_Z) || joy_fire;
+    u8 kbd_fire = IS_KEY_PRESSED(row8, KEY_SPACE) || IS_KEY_PRESSED(row5, KEY_Z);
+    u8 fire  = g_ControlMode ? kbd_fire : joy_fire;  // Only check input matching selected mode
 
     g_BlinkCtr++;
 
