@@ -2622,14 +2622,14 @@ void UpdateMenuInput()
 
         if (IS_KEY_PRESSED(row8, KEY_UP))
         {
-            g_HsInputChar[g_HsInputPos] = (g_HsInputChar[g_HsInputPos] <= 'A') ? 'Z' :
-                                           (u8)(g_HsInputChar[g_HsInputPos] - 1);
+            g_HsInputChar[g_HsInputPos] = (g_HsInputChar[g_HsInputPos] >= 'Z') ? 'A' :
+                                           (u8)(g_HsInputChar[g_HsInputPos] + 1);
             g_TitleDirty = 1; key_cd = 8;
         }
         else if (IS_KEY_PRESSED(row8, KEY_DOWN))
         {
-            g_HsInputChar[g_HsInputPos] = (g_HsInputChar[g_HsInputPos] >= 'Z') ? 'A' :
-                                           (u8)(g_HsInputChar[g_HsInputPos] + 1);
+            g_HsInputChar[g_HsInputPos] = (g_HsInputChar[g_HsInputPos] <= 'A') ? 'Z' :
+                                           (u8)(g_HsInputChar[g_HsInputPos] - 1);
             g_TitleDirty = 1; key_cd = 8;
         }
         else if (IS_KEY_PRESSED(row8, KEY_RIGHT) && g_HsInputPos < 2)
