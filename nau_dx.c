@@ -362,7 +362,7 @@ static const u8 g_ThrusterPattern[8] = {
 // Enemy shot sprite (8x8) - 1 pixel vermell centrat
 // Format MSX: 1 byte per row, 8 rows
 static const u8 g_EnemyShotPattern[8] = {
-    0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00  // 1 pixel a row 4, col 4
+    0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x00  // 2px wide (matches CPC Mode 0 visual size)
 };
 // Bomber shot (16x16) - allargat, 2px ample x 8px alt (punta avall)
 static const u8 g_BomberShotPattern[32] = {
