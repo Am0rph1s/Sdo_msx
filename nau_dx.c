@@ -3043,12 +3043,21 @@ void main()
          {
              //=== PLAYING ===
 
-              // Pause/unpause with redefinable key or joystick button B
-              static u8 p_key_was_pressed = 0;
-              u8 p_key_pressed = INPUT_PAUSE();
-              if (p_key_pressed && !p_key_was_pressed)
-                  g_PausedFlag = !g_PausedFlag;
-              p_key_was_pressed = p_key_pressed;
+               // Pause/unpause with redefinable key or joystick button B
+               static u8 p_key_was_pressed = 0;
+               u8 p_key_pressed = INPUT_PAUSE();
+               if (p_key_pressed && !p_key_was_pressed)
+               {
+                   g_PausedFlag = !g_PausedFlag;
+                   if (!g_PausedFlag)
+                   {
+                       // Clear "PAUSE" text when unpausing (was drawn at col 10, row 10)
+                       u8 ci;
+                       for (ci = 0; ci < 5; ci++)
+                           VDP_Poke_GM2((u8)(10 + ci), 10, 0);
+                   }
+               }
+               p_key_was_pressed = p_key_pressed;
 
                // Quit to menu with redefinable key (joystick: no quit button)
                if (INPUT_QUIT())
