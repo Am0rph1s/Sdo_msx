@@ -81,17 +81,19 @@ The game compiles as a flat 32KB ROM, then split into two 16KB parts:
 
 | Range | Purpose |
 |-------|---------|
-| 0-89 | Empty / available |
+| 0 | Blank tile (screen fill) |
+| 1-80 | Title logo (16x5 = 80 tiles) |
+| 81-89 | Empty / available |
 | 90-97 | Wall tiles (8 phases) |
-| 100-123 | Title logo |
-| 124 | Horizontal line tile |
-| 125 | Bar fill tile (HP bar) |
-| 130-166 | HUD font (normal, green) |
-| 167-203 | HUD font (highlight, white) |
-| 204-211 | Menu star states (3 colors) |
-| 212-219 | Game star layer 1 (slow) |
-| 220-227 | Game star layer 2 (medium) |
-| 228-235 | Game star layer 3 (fast) |
+| 98 | Horizontal line tile |
+| 99 | Bar fill tile (HP bar) |
+| 100-136 | HUD font (normal, green) |
+| 137-173 | HUD font (highlight, white) |
+| 174-181 | Menu star states (3 colors) |
+| 182-189 | Game star layer 1 (slow) |
+| 190-197 | Game star layer 2 (medium) |
+| 198-205 | Game star layer 3 (fast) |
+| 206-255 | Available |
 
 ### Sprite Layout (32 sprites, 16x16)
 
