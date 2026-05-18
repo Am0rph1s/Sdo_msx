@@ -3066,20 +3066,20 @@ void main()
                   goto quit_to_menu;
               }
 
-             // Wall scroll + starfield (always update)
-             UpdateWallScroll();
-             switch (g_StarTimer1 & 3)
-             {
-              case 0: TickStars(g_S1, N1, 3, STAR_TILE_BASE_1); break;
-              case 1: TickStars(g_S2, N2, 4, STAR_TILE_BASE_2); break;
-              case 2: TickStars(g_S3, N3, 6, STAR_TILE_BASE_3); break;
-              case 3: TickStars(g_S1, N1, 1, STAR_TILE_BASE_1); break;
-             }
-             g_StarTimer1++;
-
-              // Skip game updates if paused
+              // Skip game updates if paused (wall scroll, stars, enemies, shots, etc.)
               if (!g_PausedFlag)
               {
+                  // Wall scroll + starfield
+                  UpdateWallScroll();
+                  switch (g_StarTimer1 & 3)
+                  {
+                   case 0: TickStars(g_S1, N1, 3, STAR_TILE_BASE_1); break;
+                   case 1: TickStars(g_S2, N2, 4, STAR_TILE_BASE_2); break;
+                   case 2: TickStars(g_S3, N3, 6, STAR_TILE_BASE_3); break;
+                   case 3: TickStars(g_S1, N1, 1, STAR_TILE_BASE_1); break;
+                  }
+                  g_StarTimer1++;
+
                    // Input
                     if (!g_ShipExploding)
                     {
@@ -3108,22 +3108,28 @@ void main()
 }
 
 
-                  // Update
-                 if (g_FireCooldown > 0) g_FireCooldown--;
-                 for (i = 0; i < MAX_SHOTS; i++)
-                 {
-                     if (!g_Shots[i].active) continue;
-                     if (g_Shots[i].y < SHOT_SPEED) { g_Shots[i].active = 0; continue; }
-                     g_Shots[i].y -= SHOT_SPEED;
-                 }
+                   // Update
+                  if (g_FireCooldown > 0) g_FireCooldown--;
+                  for (i = 0; i < MAX_SHOTS; i++)
+                  {
+                      if (!g_Shots[i].active) continue;
+                      if (g_Shots[i].y < SHOT_SPEED) { g_Shots[i].active = 0; continue; }
+                      g_Shots[i].y -= SHOT_SPEED;
+                  }
 
-                 UpdateEnemies();
-                 CheckCollisions();
-                 TickExplosions();
-                 UpdateWaveBonus();
-                  UpdateShipExplosionState();
-                  UpdateShipInvulnerability();
-                  UpdateShipThrustAnim();
+                  UpdateEnemies();
+                  CheckCollisions();
+                  TickExplosions();
+                  UpdateWaveBonus();
+                   UpdateShipExplosionState();
+                   UpdateShipInvulnerability();
+                   UpdateShipThrustAnim();
+              }
+              else
+              {
+                  // Paused: draw "PAUSE" centered in game area
+                  // Game area cols 2-19 (X 16-160), "PAUSE" = 5 chars, center = col 10
+                  HudDrawText(10, 10, "PAUSE", HUD_FONT_COLOR_HI);
               }
 
               // Victoria (nivell final completat)
