@@ -949,7 +949,7 @@ static u8 WaveTypeFromMask(u8 mask)
     }
 }
 
-// 1:1 CPC: pickHomogeneousTypeForWave (simplificat per MSX)
+// 1:1 CPC: pickHomogeneousTypeForWave - sense filtres, caps s'apliquen despres
 static u8 PickTypeForWave(u8 mask)
 {
     u8 buf[5], nc = 0, b, idx;
@@ -963,22 +963,12 @@ static u8 PickTypeForWave(u8 mask)
     return buf[idx];
 }
 
-static u8 WaveMaxFastAllowed()
-{
-    if (g_Level >= 16) return 0;
-    if (g_Level >= 13) return 6;
-    if (g_Level >= 9)  return 5;
-    if (g_Level >= 6)  return 4;
-    if (g_Level >= 4)  return 3;
-    return 2;
-}
-
 static u8 HeavyWaveCapForLevel()
 {
     if (g_Level >= 21) return 5;
     if (g_Level >= 16) return 4;
     if (g_Level >= 11) return 3;
-    return WAVE_MAX_HEAVY_PER_WAVE;
+    return 3;
 }
 
 static u8 BomberWaveCapForLevel()
@@ -986,23 +976,6 @@ static u8 BomberWaveCapForLevel()
     if (g_Level >= 23) return 5;
     if (g_Level >= 22) return 4;
     return 3;
-}
-
-static u8 PickTypeForWaveCapped(u8 mask, u8 total)
-{
-    u8 buf[5], nc = 0, b, idx, mf;
-    if (!mask) return ENEMY_TYPE_BASIC;
-    mf = WaveMaxFastAllowed();
-    for (b = 0; b < 5; b++)
-    {
-        if (!(mask & (1u << b))) continue;
-        if (b == ENEMY_TYPE_FAST && total > mf) continue;
-        if (b == ENEMY_TYPE_HEAVY && total > WAVE_MAX_HEAVY_PER_WAVE) continue;
-        buf[nc++] = b;
-    }
-    if (!nc) return ENEMY_TYPE_BASIC;
-    idx = (u8)((Math_GetRandom8() ^ (g_WavesCleared << 1) ^ g_Level) % nc);
-    return buf[idx];
 }
 
 // 1:1 CPC: buildWaveTypePlan
@@ -1013,7 +986,7 @@ static void BuildWaveTypePlan(u8 total, u8 mask)
     if (st != 255)
         t = st;
     else
-        t = PickTypeForWaveCapped(mask, total);
+        t = PickTypeForWave(mask);
     for (slot = 0; slot < total; slot++)
         g_WaveSlotType[slot] = t;
     g_WaveBonusBase = g_EnemyScore[t];
@@ -1249,8 +1222,8 @@ static void StartNewWave()
     if (cfg->intro_mask && g_WavesCleared == 0)
         mask = cfg->intro_mask;
 
-    // Mode indian o rank aleatori
-    g_WaveMode = (Math_GetRandom8() & 1) ? WAVE_MODE_INDIAN : WAVE_MODE_RANK;
+    // Mode indian o rank aleatori (1:1 CPC: 25% indian)
+    g_WaveMode = ((Math_GetRandom8() & 3) == 0) ? WAVE_MODE_INDIAN : WAVE_MODE_RANK;
 
     BuildWaveTypePlan(total, mask);
 
@@ -1528,16 +1501,16 @@ static void BossFireVolley(u8 i)
             }
             break;
         case 1:
-            SpawnEnemyBullet((u8)(bx - 4u), by, -1, bvyFan, ENEMYSHOT_TYPE_BULLET);
-            SpawnEnemyBullet((u8)(bx + 4u), by,  1, bvyFan, ENEMYSHOT_TYPE_BULLET);
+            SpawnEnemyBullet((u8)(bx - 6u), by, -2, bvyFan, ENEMYSHOT_TYPE_BULLET);
+            SpawnEnemyBullet((u8)(bx + 6u), by,  2, bvyFan, ENEMYSHOT_TYPE_BULLET);
             if (tier >= 2) SpawnEnemyBullet(bx, by, 0, (u8)(bvyFan + 1u), ENEMYSHOT_TYPE_BULLET);
             break;
         case 2:
-            SpawnEnemyBullet((u8)(bx - 5u), by, -1, bvyFan, ENEMYSHOT_TYPE_BULLET);
+            SpawnEnemyBullet((u8)(bx - 7u), by, -2, bvyFan, ENEMYSHOT_TYPE_BULLET);
             SpawnEnemyBullet(bx, by, 0, bvyFan, ENEMYSHOT_TYPE_BULLET);
-            SpawnEnemyBullet((u8)(bx + 5u), by, 1, bvyFan, ENEMYSHOT_TYPE_BULLET);
+            SpawnEnemyBullet((u8)(bx + 7u), by, 2, bvyFan, ENEMYSHOT_TYPE_BULLET);
             if (tier >= 2) BossTryAimedShot(dual_mode, bx, by, enemyShotAimVXBoss(bx), (u8)(bvyFan + 1u));
-            if (tier >= 3) SpawnEnemyBullet((u8)(bx + 2u), by, -1, (u8)(bvyFan + 1u), ENEMYSHOT_TYPE_BULLET);
+            if (tier >= 3) SpawnEnemyBullet((u8)(bx + 3u), by, -2, (u8)(bvyFan + 1u), ENEMYSHOT_TYPE_BULLET);
             break;
         default:
             BossTryAimedShot(dual_mode, bx, by, enemyShotAimVXBoss(bx), bvy);
@@ -2991,6 +2964,7 @@ void ResetGameSession()
     g_Score       = 0;
     g_Lives       = 2;
     g_Level       = 1;
+    g_CurrentBiome = 0;
     g_WavesCleared = 0;
     g_HudDirty    = 1;
     g_ShipLastLife = 0;
