@@ -36,9 +36,9 @@
 #define FIRE_COOLDOWN   4   // CPC: 1, nosaltres 4 (per compensar 50fps estables)
 
 // Starfield - 3 layers (mes estels i mes rapid que l'original)
-#define N1              8    // slow stars
-#define N2              12   // medium stars
-#define N3              16   // fast stars
+#define N1              6    // slow stars (reduced from 8)
+#define N2              8    // medium stars (reduced from 12)
+#define N3              10   // fast stars (reduced from 16)
 #define STAR_X0         (GAME_X0 + 4)
 #define STAR_X1         (GAME_X1 - 4)
 
@@ -539,25 +539,69 @@ void InitWallTiles()
     }
 }
 
-void UpdateWallScroll()
+void UpdateWallScroll() __naked
 {
-    g_WallPhaseTimer++;
-    if (g_WallPhaseTimer < WALL_SPEED) return;
-    g_WallPhaseTimer = 0;
-    g_WallPhase = (g_WallPhase + 1) & 7;
+__asm
+    ld hl, #_g_WallPhaseTimer
+    inc (hl)
+    ld a, (hl)
+    sub a, #WALL_SPEED
+    ret c
+    ld (hl), #0x00
 
-    u8 row;
-    u16 base = g_ScreenLayoutLow;
-    for (row = 0; row < 24; row++)
-    {
-        u8 tile[2];
-        u16 addr = base + (u16)(row * 32);
-        tile[0] = WALL_TILE_BASE + ((g_WallPhase + row) & 7);
-        tile[1] = tile[0];
-        // Write cols 0-1 i 20-21 (2 bytes cada grup, un sol setup VRAM per grup)
-        VDP_WriteVRAM(tile, addr,      g_ScreenLayoutHigh, 2);
-        VDP_WriteVRAM(tile, addr + 20, g_ScreenLayoutHigh, 2);
-    }
+    ld hl, #_g_WallPhase
+    ld a, (hl)
+    inc a
+    and a, #0x07
+    ld (hl), a
+    ld c, a
+
+    ld hl, (_g_ScreenLayoutLow)
+    ld b, #0x18
+00100$:
+    ld a, c
+    and a, #0x07
+    add a, #WALL_TILE_BASE
+    ld e, a
+
+    ld a, l
+    di
+    out (#0x99), a
+    ld a, h
+    and a, #0x3F
+    or a, #0x40
+    out (#0x99), a
+    ld a, e
+    ei
+    out (#0x98), a
+    out (#0x98), a
+
+    ld a, l
+    add a, #0x14
+    ld d, a
+    ld a, h
+    adc a, #0x00
+    ld e, a
+    ld a, d
+    di
+    out (#0x99), a
+    ld a, e
+    and a, #0x3F
+    or a, #0x40
+    out (#0x99), a
+    ld a, c
+    and a, #0x07
+    add a, #WALL_TILE_BASE
+    ei
+    out (#0x98), a
+    out (#0x98), a
+
+    ld de, #0x0020
+    add hl, de
+    inc c
+    djnz 00100$
+    ret
+__endasm;
 }
 
 //=============================================================================
@@ -642,16 +686,101 @@ void InitStars(TStar* s, u8 n, u8 base)
     }
 }
 
-void TickStars(TStar* s, u8 n, u8 speed, u8 base)
+void TickStars(TStar* s, u8 n, u8 speed, u8 base) __naked
 {
-    u8 i;
-    for (i = 0; i < n; i++)
-    {
-        EraseStarPixel(s[i].x, s[i].y);
-        s[i].y += speed;
-        if (s[i].y >= SCREEN_H) s[i].y = 0;
-        DrawStarPixel(s[i].x, s[i].y, base);
-    }
+__asm
+    push iy
+    ld iy, #2
+    add iy, sp
+    ld b, 2(iy)
+    ld a, b
+    or a
+    jr z, tickstars_done$
+    ex de, hl
+tickstars_loop$:
+    push bc
+    push de
+    ld a, (de)
+    srl a
+    srl a
+    srl a
+    ld c, a
+    inc de
+    ld a, (de)
+    srl a
+    srl a
+    srl a
+    ld l, a
+    ld h, #0x00
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    ld b, #0x00
+    add hl, bc
+    ld bc, (_g_ScreenLayoutLow)
+    add hl, bc
+    ex de, hl
+    xor a
+    call _VDP_Poke_16K
+    pop de
+    pop bc
+
+    inc de
+    ld a, (de)
+    add a, 3(iy)
+    cp #0xC0
+    jr c, tickstars_nowrap$
+    xor a
+tickstars_nowrap$:
+    ld (de), a
+    dec de
+
+    push bc
+    push de
+    ld a, (de)
+    srl a
+    srl a
+    srl a
+    ld c, a
+    inc de
+    ld a, (de)
+    ld l, a
+    and a, #0x07
+    add a, 4(iy)
+    push af
+    ld a, l
+    srl a
+    srl a
+    srl a
+    ld l, a
+    ld h, #0x00
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    add hl, hl
+    ld b, #0x00
+    add hl, bc
+    ld bc, (_g_ScreenLayoutLow)
+    add hl, bc
+    ex de, hl
+    pop af
+    call _VDP_Poke_16K
+    pop de
+    pop bc
+
+    inc de
+    inc de
+    djnz tickstars_loop$
+tickstars_done$:
+    pop iy
+    pop hl
+    pop af
+    inc sp
+    jp (hl)
+__endasm;
 }
 
 //=============================================================================
@@ -1132,6 +1261,14 @@ static void StartNewWave()
 {
     const TLevelConfig* cfg = LevelConfigGet(g_Level);
     u8 mask, total, tier, i;
+    
+    // Precalculate random values for this wave setup (avoid repeated calls)
+    u8 wave_rand[8];
+    u8 wave_rand_idx = 0;
+    u8 j;
+    for (j = 0; j < 8; j++) wave_rand[j] = Math_GetRandom8();
+    
+    #define WAVE_NEXT_RAND() (wave_rand[(wave_rand_idx++) & 7])
 
     g_WaveKilled    = 0;
     g_WaveActive    = 1;
@@ -1161,15 +1298,15 @@ static void StartNewWave()
                 g_Enemies[i].boss_hp_max = g_Enemies[i].health;
                 g_Enemies[i].vy      = g_BossTierTable[tier].vy;
                 g_Enemies[i].vx      = 1;
-                g_Enemies[i].pattern = (u8)(Math_GetRandom8() & 7u);
-                g_Enemies[i].zig_timer = (u8)(8u + (Math_GetRandom8() & 7u));
+                g_Enemies[i].pattern = (u8)(WAVE_NEXT_RAND() & 7u);
+                g_Enemies[i].zig_timer = (u8)(8u + (WAVE_NEXT_RAND() & 7u));
                 g_Enemies[i].fire_cd = g_BossTierTable[tier].fire_cd;
                 g_Enemies[i].boss_vosc = BOSS_VOSC_DESC;
                 break;
             }
         }
         g_WaveBonusBase = 0;
-        g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
+        g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(WAVE_NEXT_RAND(), SPAWN_VARIANCE + 1));
         sfxLevelUp();  // So d'avís de boss
         g_HudDirty = 1;
         return;
@@ -1180,7 +1317,7 @@ static void StartNewWave()
         g_WaveTotal = 2;
         tier = 3; // CPC final dual: HP per boss like single level 20
         g_WaveSpawned = 2;
-        g_BossLaneIdx = (Math_GetRandom8() & 1u) ? 0 : 2;
+        g_BossLaneIdx = (WAVE_NEXT_RAND() & 1u) ? 0 : 2;
         
         // Spawn two bosses
         for (i = 0; i < MAX_ENEMIES && g_WaveSpawned > 0; i++)
@@ -1198,8 +1335,8 @@ static void StartNewWave()
                 g_Enemies[i].boss_hp_max = g_Enemies[i].health;
                 g_Enemies[i].vy      = g_BossTierTable[tier].vy;
                 g_Enemies[i].vx      = 1;
-                g_Enemies[i].pattern = (u8)(Math_GetRandom8() & 7u);
-                g_Enemies[i].zig_timer = (u8)(8u + (Math_GetRandom8() & 7u));
+                g_Enemies[i].pattern = (u8)(WAVE_NEXT_RAND() & 7u);
+                g_Enemies[i].zig_timer = (u8)(8u + (WAVE_NEXT_RAND() & 7u));
                 g_Enemies[i].fire_cd = g_BossTierTable[tier].fire_cd;
                 g_Enemies[i].boss_vosc = BOSS_VOSC_DESC;
                 g_BossLaneIdx = (u8)(2u - g_BossLaneIdx);
@@ -1208,7 +1345,7 @@ static void StartNewWave()
         }
         g_WaveSpawned = 2;
         g_WaveBonusBase = 0;
-        g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
+        g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(WAVE_NEXT_RAND(), SPAWN_VARIANCE + 1));
         sfxLevelUp();
         return;
     }
@@ -1223,7 +1360,7 @@ static void StartNewWave()
         mask = cfg->intro_mask;
 
     // Mode indian o rank aleatori (1:1 CPC: 25% indian)
-    g_WaveMode = ((Math_GetRandom8() & 3) == 0) ? WAVE_MODE_INDIAN : WAVE_MODE_RANK;
+    g_WaveMode = ((WAVE_NEXT_RAND() & 3) == 0) ? WAVE_MODE_INDIAN : WAVE_MODE_RANK;
 
     BuildWaveTypePlan(total, mask);
 
@@ -1253,7 +1390,7 @@ static void StartNewWave()
     GetPatternForType(g_WaveSlotType[0], &g_WaveUnifiedPatt, &g_WaveUnifiedVX);
 
     TryWaveSpawnTopup();
-    g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(Math_GetRandom8(), SPAWN_VARIANCE + 1));
+    g_SpawnTimer = (u8)(SPAWN_BASE + MOD_POW2(WAVE_NEXT_RAND(), SPAWN_VARIANCE + 1));
 }
 
 // 1:1 CPC: spawnWave
@@ -1531,6 +1668,21 @@ static void BossFireVolley(u8 i)
 void UpdateEnemies()
 {
     u8 i, tier;
+    
+    // Precalculate values used by all bosses
+    u8 active_bosses = CountActiveBosses();
+    u8 dual_mode = (active_bosses >= 2u) ? 1u : 0u;
+    tier = BossTierFromLevel(g_Level);
+    u8 boss_xmin = GAME_X0;
+    u8 boss_xmax = (u8)(GAME_X1 - ENEMY_BOSS_W);
+    
+    // Precalculate random values for this frame (avoid repeated calls inside loops)
+    u8 rand_pool[8];
+    u8 rand_idx = 0;
+    u8 j;
+    for (j = 0; j < 8; j++) rand_pool[j] = Math_GetRandom8();
+    
+    #define NEXT_RAND() (rand_pool[(rand_idx++) & 7])
 
     // 1:1 CPC: spawnWave (no spawna mentre explota o invulnerable)
     if (!g_ShipExploding && !g_ShipInvul)
@@ -1544,14 +1696,12 @@ void UpdateEnemies()
         // Boss-specific behavior
         if (g_Enemies[i].type == ENEMY_TYPE_BOSS)
         {
-            u8 xmn = GAME_X0;
-            u8 xmx = (u8)(GAME_X1 - ENEMY_BOSS_W);
             u8 pivot = g_Enemies[i].boss_lane_x0;
             u8 hold = BOSS_HOLD_Y;
             u8 ymin = (u8)(hold - BOSS_Y_OSC);
-            u8 dual_mode = (CountActiveBosses() >= 2u) ? 1u : 0u;
             i16 nxx, dxp;
-            tier = BossTierFromLevel(g_Level);
+            u8 xmn = boss_xmin;
+            u8 xmx = boss_xmax;
             if (dual_mode)
             {
                 i16 lx = (i16)pivot - BOSS_DUAL_LANE_HALF;
@@ -1589,21 +1739,21 @@ void UpdateEnemies()
             else
             {
                 u8 r;
-                if (tier >= 3) g_Enemies[i].zig_timer = (u8)(6u + (Math_GetRandom8() & 7u));
-                else if (tier == 2) g_Enemies[i].zig_timer = (u8)(7u + (Math_GetRandom8() & 7u));
-                else if (tier == 1) g_Enemies[i].zig_timer = (u8)(8u + (Math_GetRandom8() & 7u));
-                else g_Enemies[i].zig_timer = (u8)(8u + (Math_GetRandom8() & 11u));
-                r = Math_GetRandom8() & 7u;
+                if (tier >= 3) g_Enemies[i].zig_timer = (u8)(6u + (NEXT_RAND() & 7u));
+                else if (tier == 2) g_Enemies[i].zig_timer = (u8)(7u + (NEXT_RAND() & 7u));
+                else if (tier == 1) g_Enemies[i].zig_timer = (u8)(8u + (NEXT_RAND() & 7u));
+                else g_Enemies[i].zig_timer = (u8)(8u + (NEXT_RAND() & 11u));
+                r = NEXT_RAND() & 7u;
                 if (tier >= 2)
                 {
                     if (r < 4u) g_Enemies[i].vx = (g_Enemies[i].vx < 0) ? -2 : 2;
-                    else g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? 2 : -2;
+                    else g_Enemies[i].vx = (NEXT_RAND() & 1u) ? 2 : -2;
                 }
                 else
                 {
                     if (r < 3u) g_Enemies[i].vx = (g_Enemies[i].vx < 0) ? -2 : 2;
-                    else if (r < 6u) g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? 1 : -1;
-                    else g_Enemies[i].vx = (Math_GetRandom8() & 1u) ? 2 : -2;
+                    else if (r < 6u) g_Enemies[i].vx = (NEXT_RAND() & 1u) ? 1 : -1;
+                    else g_Enemies[i].vx = (NEXT_RAND() & 1u) ? 2 : -2;
                 }
                 if (!g_Enemies[i].vx) g_Enemies[i].vx = 1;
             }
@@ -1775,7 +1925,21 @@ void soundStopAll(void) {
     PSG_Mute();
 }
 
-void soundInit(void) { soundStopAll(); }
+void soundInit(void) { 
+    soundStopAll();
+    // Ensure all PSG channels are muted to prevent keyboard noise
+    PSG_SetVolume(PSG_CHANNEL_A, 0);
+    PSG_SetVolume(PSG_CHANNEL_B, 0);
+    PSG_SetVolume(PSG_CHANNEL_C, 0);
+    // Disable keyboard click by setting mixer register (reg 7) to disable noise on all channels
+    PSG_SetRegister(7, 0x3F);
+    // Disable keyboard click via MSX system variable CLIKSW (0xF3DB)
+    // 0 = key click off, non-zero = key click on
+    __asm
+        xor a
+        ld (#0xF3DB), a
+    __endasm;
+}
 void sfxShot(void) { sfxC_kind = SFX_SHOT; sfxC_frame = 0; setToneC(30, 1, 9); PSG_EnableTone(PSG_CHANNEL_C, TRUE); PSG_EnableNoise(PSG_CHANNEL_C, FALSE); }
 void sfxEnemyExplosion(void) { sfxB_kind = SFX_EXP_ENEMY; sfxB_frame = 0; PSG_SetRegister(6, 0x04); PSG_SetVolume(PSG_CHANNEL_B, 13); PSG_EnableTone(PSG_CHANNEL_B, FALSE); PSG_EnableNoise(PSG_CHANNEL_B, TRUE); }
 void sfxShipExplosion(void) { sfxB_kind = SFX_EXP_SHIP; sfxB_frame = 0; setToneB(138, 1, 15); PSG_SetRegister(6, 0x04); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, TRUE); }
@@ -1863,10 +2027,15 @@ static void tickChannelC(void) {
     PSG_SetVolume(PSG_CHANNEL_C, 0);
 }
 void soundTick(void) {
+    u8 a = sfxA_kind;
+    u8 b = sfxB_kind;
+    u8 c = sfxC_kind;
+    if (a == SFX_NONE && b == SFX_NONE && c == SFX_NONE) return;
     tickChannelA();
     tickChannelB();
     tickChannelC();
-    updateMixer();
+    if (a != sfxA_kind || b != sfxB_kind || c != sfxC_kind)
+        updateMixer();
 }
 
 //=============================================================================
@@ -1997,6 +2166,8 @@ void CheckCollisions()
         for (j = 0; j < MAX_ENEMIES; j++)
         {
             if (!g_Enemies[j].active) continue;
+            // Quick Y filter before overlap
+            if (g_Shots[i].y + 8 < g_Enemies[j].y || g_Shots[i].y >= g_Enemies[j].y + ((g_Enemies[j].type == ENEMY_TYPE_BOSS) ? ENEMY_BOSS_H : ENEMY_H)) continue;
             
             // Determine enemy hitbox size
             enemy_w = (g_Enemies[j].type == ENEMY_TYPE_BOSS) ? ENEMY_BOSS_W : ENEMY_W;
@@ -2030,6 +2201,7 @@ void CheckCollisions()
                     sfxEnemyExplosion();  // So d'impacte al boss/heavy/bomber
                     g_HudDirty = 1;  // Update HUD (boss HP bar etc.)
                 }
+                break; // Stop checking other enemies with this shot
             }
         }
     }
@@ -2217,7 +2389,7 @@ static const u8 g_MenuStarCX[MENU_STAR_COMMON_N] = {
 };
 static const u8 g_MenuStarCY[MENU_STAR_COMMON_N] = {
     0x00,0x01,0x03,0x04,0x06,0x07,0x09,0x0A,0x0C,0x0D,
-    0x0F,0x10,0x12,0x13,0x15,0x16,0x18,0x19,0x21,0x22,
+    0x0F,0x10,0x12,0x13,0x15,0x16,0x18,0x19,0x0E,0x11,
     0x00,0x01,0x03,0x04,0x06,0x07,0x09,0x0A,0x0C,0x0D,
 };
 static const u8 g_MenuStarCS[MENU_STAR_COMMON_N] = {
@@ -2262,9 +2434,35 @@ static const u8 g_MenuStarTS[MENU_STAR_TOP3_N] = {
     0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,
 };
 
+// Extra stars HISCORE_VIEW: rows 0-5 (above GAMEOVER) + rows 19-22 (below PRESS ANY KEY)
+#define MENU_STAR_HIV_N 12
+static const u8 g_MenuStarHVX[MENU_STAR_HIV_N] = {
+    0x06,0x0A,0x0E,0x12,0x16,0x1A,0x08,0x0C,0x10,0x14,0x18,0x05,
+};
+static const u8 g_MenuStarHVY[MENU_STAR_HIV_N] = {
+    0x00,0x01,0x02,0x03,0x04,0x05,0x00,0x01,0x02,0x03,0x04,0x13,
+};
+static const u8 g_MenuStarHVS[MENU_STAR_HIV_N] = {
+    0,1,2,3,0,1,2,3,0,1,2,3,
+};
+
+// Extra stars HISCORE_INPUT: rows 0-3 (above GAMEOVER) + rows 17-22 (below table)
+#define MENU_STAR_HII_N 12
+static const u8 g_MenuStarHIX[MENU_STAR_HII_N] = {
+    0x06,0x0A,0x0E,0x12,0x16,0x1A,0x08,0x0C,0x10,0x14,0x18,0x05,
+};
+static const u8 g_MenuStarHIY[MENU_STAR_HII_N] = {
+    0x00,0x01,0x02,0x03,0x00,0x01,0x02,0x03,0x00,0x01,0x02,0x11,
+};
+static const u8 g_MenuStarHIS[MENU_STAR_HII_N] = {
+    0,1,2,3,0,1,2,3,0,1,2,3,
+};
+
 static u8 g_MenuStarState[MENU_STAR_COMMON_N];
 static u8 g_MenuStarMState[MENU_STAR_MENU_N];
 static u8 g_MenuStarTState[MENU_STAR_TOP3_N];
+static u8 g_MenuStarHVState[MENU_STAR_HIV_N];
+static u8 g_MenuStarHIState[MENU_STAR_HII_N];
 static u8 g_MenuTwinkleTick = 0;
 static u8 g_MenuTwinkleRng  = 0x5A;
 
@@ -2291,6 +2489,8 @@ void InitMenuStars()
     for (i = 0; i < MENU_STAR_COMMON_N; i++) g_MenuStarState[i] = g_MenuStarCS[i];
     for (i = 0; i < MENU_STAR_MENU_N; i++) g_MenuStarMState[i] = g_MenuStarMS[i];
     for (i = 0; i < MENU_STAR_TOP3_N; i++) g_MenuStarTState[i] = g_MenuStarTS[i];
+    for (i = 0; i < MENU_STAR_HIV_N; i++) g_MenuStarHVState[i] = g_MenuStarHVS[i];
+    for (i = 0; i < MENU_STAR_HII_N; i++) g_MenuStarHIState[i] = g_MenuStarHIS[i];
     g_MenuTwinkleTick = 0;
     g_MenuTwinkleRng  = 0x5A;
 }
@@ -2310,6 +2510,16 @@ static void DrawMenuStarTop3(u8 idx)
     u8 tile = (g_MenuStarTState[idx] == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + g_MenuStarTState[idx] - 1);
     VDP_Poke_GM2(g_MenuStarTX[idx], g_MenuStarTY[idx], tile);
 }
+static void DrawMenuStarHiV(u8 idx)
+{
+    u8 tile = (g_MenuStarHVState[idx] == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + g_MenuStarHVState[idx] - 1);
+    VDP_Poke_GM2(g_MenuStarHVX[idx], g_MenuStarHVY[idx], tile);
+}
+static void DrawMenuStarHiI(u8 idx)
+{
+    u8 tile = (g_MenuStarHIState[idx] == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + g_MenuStarHIState[idx] - 1);
+    VDP_Poke_GM2(g_MenuStarHIX[idx], g_MenuStarHIY[idx], tile);
+}
 
 static void DrawAllStarsForMode(u8 mode)
 {
@@ -2319,6 +2529,10 @@ static void DrawAllStarsForMode(u8 mode)
         VDP_Poke_GM2(g_MenuStarMX[i], g_MenuStarMY[i], 0);
     for (i = 0; i < MENU_STAR_TOP3_N; i++)
         VDP_Poke_GM2(g_MenuStarTX[i], g_MenuStarTY[i], 0);
+    for (i = 0; i < MENU_STAR_HIV_N; i++)
+        VDP_Poke_GM2(g_MenuStarHVX[i], g_MenuStarHVY[i], 0);
+    for (i = 0; i < MENU_STAR_HII_N; i++)
+        VDP_Poke_GM2(g_MenuStarHIX[i], g_MenuStarHIY[i], 0);
     // Draw common stars
     for (i = 0; i < MENU_STAR_COMMON_N; i++) DrawMenuStarCommon(i);
     // Draw mode-specific extra stars
@@ -2326,6 +2540,10 @@ static void DrawAllStarsForMode(u8 mode)
         for (i = 0; i < MENU_STAR_MENU_N; i++) DrawMenuStarMenu(i);
     else if (mode == TS_ATTRACT_SCORE)
         for (i = 0; i < MENU_STAR_TOP3_N; i++) DrawMenuStarTop3(i);
+    else if (mode == TS_HISCORE_VIEW)
+        for (i = 0; i < MENU_STAR_HIV_N; i++) DrawMenuStarHiV(i);
+    else if (mode == TS_HISCORE_INPUT)
+        for (i = 0; i < MENU_STAR_HII_N; i++) DrawMenuStarHiI(i);
 }
 
 void TickMenuStars()
@@ -2364,6 +2582,20 @@ void TickMenuStars()
         i = src; while (i >= MENU_STAR_TOP3_N) i = (u8)(i - MENU_STAR_TOP3_N);
         g_MenuStarTState[i] = (u8)((g_MenuStarTState[i] + 1u) & 3u);
         DrawMenuStarTop3(i);
+    }
+    else if (g_TitleMode == TS_HISCORE_VIEW)
+    {
+        src = (u8)(g_MenuTwinkleRng * 13u + 7u);
+        i = src; while (i >= MENU_STAR_HIV_N) i = (u8)(i - MENU_STAR_HIV_N);
+        g_MenuStarHVState[i] = (u8)((g_MenuStarHVState[i] + 1u) & 3u);
+        DrawMenuStarHiV(i);
+    }
+    else if (g_TitleMode == TS_HISCORE_INPUT)
+    {
+        src = (u8)(g_MenuTwinkleRng * 13u + 7u);
+        i = src; while (i >= MENU_STAR_HII_N) i = (u8)(i - MENU_STAR_HII_N);
+        g_MenuStarHIState[i] = (u8)((g_MenuStarHIState[i] + 1u) & 3u);
+        DrawMenuStarHiI(i);
     }
 }
 
@@ -2819,22 +3051,13 @@ void UpdateMenuInput()
     InitLogoTiles();
     InitHudFontTiles();
 
-    // 1:1 CPC: estrelles centrals NOMÉS per TOP3 (zona superior buida sense logo)
-    // HISCORE_INPUT i HISCORE_VIEW: no estrelles (corrompen text i sobreescriuen font A,B,C)
-    if (g_TitleMode != TS_HISCORE_INPUT && g_TitleMode != TS_HISCORE_VIEW)
-    {
-        InitMenuStarTiles();
-        InitMenuStars();
-        DrawAllStarsForMode(g_TitleMode);
-    }
-    else
-    {
-        // No stars during hi-score input (they corrupt text)
-    }
+    // Stars for all menu screens (safe zones avoid text overlap)
+    InitMenuStarTiles();
+    InitMenuStars();
+    DrawAllStarsForMode(g_TitleMode);
 
     if (g_TitleMode == TS_MENU)
     {
-        DrawAllStarsForMode(TS_MENU);
         DrawLogo();
         HudDrawHLine(3, 4, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(11, 6, "1 JOYSTICK", g_ControlMode == 0 ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM);
@@ -2847,7 +3070,6 @@ void UpdateMenuInput()
     }
     else if (g_TitleMode == TS_ATTRACT_SCORE)
     {
-        DrawAllStarsForMode(TS_ATTRACT_SCORE);
         HudDrawText(13, 8, "TOP  3", HUD_FONT_COLOR_HI);
         HudDrawHLine(3,  9, 26, HUD_FONT_COLOR_CYN);
         DrawHiScoreTable(0xFF);
@@ -3085,8 +3307,7 @@ void main()
          {
              //=== MENU ===
              UpdateMenuInput();
-             if (g_TitleMode != TS_HISCORE_INPUT && g_TitleMode != TS_HISCORE_VIEW)
-                 TickMenuStars(); // Stars corrupt text in gameover screens
+             TickMenuStars();
 
                if (g_TitleDirty)
                {
@@ -3121,9 +3342,17 @@ void main()
                if (p_key_pressed && !p_key_was_pressed)
                {
                    g_PausedFlag = !g_PausedFlag;
-                   if (!g_PausedFlag)
+                   if (g_PausedFlag)
                    {
-                       // Clear "PAUSE" text when unpausing (was drawn at col 10, row 10)
+                       // Disable sprites and draw PAUSE once
+                       u8 s;
+                       for (s = 0; s < 32; s++)
+                           VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
+                       HudDrawText(10, 10, "PAUSE", HUD_FONT_COLOR_HI);
+                   }
+                   else
+                   {
+                       // Clear PAUSE text when unpausing
                        u8 ci;
                        for (ci = 0; ci < 5; ci++)
                            VDP_Poke_GM2((u8)(10 + ci), 10, 0);
@@ -3152,6 +3381,7 @@ void main()
               {
                   // Wall scroll + starfield
                   UpdateWallScroll();
+                  // Update one star layer each frame
                   switch (g_StarTimer1 & 3)
                   {
                    case 0: TickStars(g_S1, N1, 3, STAR_TILE_BASE_1); break;
@@ -3208,9 +3438,7 @@ void main()
               }
               else
               {
-                  // Paused: draw "PAUSE" centered in game area
-                  // Game area cols 2-19 (X 16-160), "PAUSE" = 5 chars, center = col 10
-                  HudDrawText(10, 10, "PAUSE", HUD_FONT_COLOR_HI);
+                  // Paused: no updates; PAUSE text already drawn once on entry
               }
 
               // Victoria (nivell final completat)
@@ -3340,6 +3568,9 @@ void main()
                   }
 
                  // Desactiva sprites que sobren (Y=208 = off-screen)
+                 // Cache: només desactivar sprites que no ho estaven ja
+                 static u8 last_spr_count = 32;
+                 u8 start_disable = (spr < last_spr_count) ? spr : last_spr_count;
                  while (spr < 32)
                  {
                      g_SprBuf[spr*4+0] = VDP_SPRITE_DISABLE_SM1;
@@ -3348,6 +3579,7 @@ void main()
                      g_SprBuf[spr*4+3] = 0;
                      spr++;
                  }
+                 last_spr_count = start_disable;
 
                   // Batch write all 32 sprites to VRAM en un sol cop
                   VDP_WriteVRAM(g_SprBuf, g_SpriteAttributeLow, g_SpriteAttributeHigh, 128);
