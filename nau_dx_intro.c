@@ -13,19 +13,37 @@ static const u8 g_Trampoline[] = {
 };
 
 //=============================================================================
-// INTRO MUSIC - exact port of CPC playMenuCoin() from main_menu.c
-// CPC AY clock = 1MHz, MSX AY clock = 3.58MHz -> scale factor = 3.58
-// Original CPC periods: A={239,190,160,119}, B={190,160,119,95}, C={160,119,95,80}
-// Scaled for MSX: x3.58
+// INTRO MUSIC - exact port of CPC loader.s loading_music[] (lines 583-661)
+// CPC AY clock = 1MHz, MSX AY clock = 3.58MHz -> scale periods x3.58
+// Each CPC step: .dw duration, .db A_lo,A_hi, B_lo,B_hi, C_lo,C_hi
+// Volume from mt_apply_chs: A=11, B=10, C=7
 //=============================================================================
 
-static const u16 g_MusicA[16] = {856,856,856, 680,680,680, 573,573,573, 426,426,426,426,426,426,426};
-static const u16 g_MusicB[16] = {680,680,680, 573,573,573, 426,426,426, 340,340,340,340,340,340,340};
-static const u16 g_MusicC[16] = {573,573,573, 426,426,426, 340,340,340, 286,286,286,286,286,286,286};
-#define MUSIC_NSTEPS 16
-#define MUSIC_VOL_A 15
-#define MUSIC_VOL_B 12
-#define MUSIC_VOL_C 9
+// 39 steps parsed from loader.s, periods scaled x3.58 for MSX
+static const u16 g_MusicDur[39] = {
+    16,15,15,16,15,15,16,20,16,15,15,16,15,15,16,20,
+    16,15,15,16,15,15,16,20,16,15,15,16,15,15,16,20,
+    18,16,15,16,18,25,0
+};
+static const u16 g_MusicA[39] = {
+    1360,1360,1360,856,1017,1078,1360,1360,1360,1360,1360,856,1017,1078,1360,1360,
+    856,856,856,763,1017,1078,1360,1360,856,856,856,763,1017,1078,1360,1360,
+    763,856,1017,1078,1360,1360,0
+};
+static const u16 g_MusicB[39] = {
+    2721,2721,2721,2284,2284,2284,2721,2721,2721,2721,2721,2284,2284,2284,2721,2721,
+    2284,2284,2284,2721,2284,2284,2721,2721,2284,2284,2284,2721,2284,2284,2721,2721,
+    2721,2721,2721,2284,2721,2721,0
+};
+static const u16 g_MusicC[39] = {
+    1210,1210,1210,1439,1360,1142,1210,1210,1210,1210,1210,1439,1360,1142,1210,1210,
+    1439,1439,1439,1525,1360,1142,1210,1210,1439,1439,1439,1525,1360,1142,1210,1210,
+    1525,1439,1360,1142,1210,1210,0
+};
+#define MUSIC_NSTEPS 39
+#define MUSIC_VOL_A 11
+#define MUSIC_VOL_B 10
+#define MUSIC_VOL_C 7
 
 static void MusicTick(u8 step)
 {
@@ -35,19 +53,19 @@ static void MusicTick(u8 step)
     per = g_MusicA[step];
     PSG_SetRegister(0, (u8)(per & 0xFF));
     PSG_SetRegister(1, (u8)((per >> 8) & 0x0F));
-    PSG_SetRegister(8, (step < 12) ? MUSIC_VOL_A : 8);
+    PSG_SetRegister(8, MUSIC_VOL_A);
 
     // Channel B
     per = g_MusicB[step];
     PSG_SetRegister(2, (u8)(per & 0xFF));
     PSG_SetRegister(3, (u8)((per >> 8) & 0x0F));
-    PSG_SetRegister(9, (step < 12) ? MUSIC_VOL_B : 5);
+    PSG_SetRegister(9, MUSIC_VOL_B);
 
     // Channel C
     per = g_MusicC[step];
     PSG_SetRegister(4, (u8)(per & 0xFF));
     PSG_SetRegister(5, (u8)((per >> 8) & 0x0F));
-    PSG_SetRegister(10, (step < 12) ? MUSIC_VOL_C : 2);
+    PSG_SetRegister(10, MUSIC_VOL_C);
 
     // Mixer: enable all 3 tone channels, disable noise
     PSG_SetRegister(7, 0x38);
@@ -67,6 +85,7 @@ void main()
     u8* dst;
     const u8* src;
     u8 mStep;
+    u16 mFrame;
 
     // Init VDP
     VDP_SetMode(VDP_MODE_GRAPHIC2);
@@ -87,24 +106,29 @@ void main()
     for (i = 0; i < 32; i++)
         VDP_SetSpritePositionY(i, VDP_SPRITE_DISABLE_SM1);
 
-    // Music + wait loop (exact CPC playMenuCoin timing: 1 step per VSYNC, looped)
+    // Music + wait loop (exact CPC loader.s timing: 1 step per VSYNC, looped)
     mStep = 0;
     while (1)
     {
         MusicTick(mStep);
+        mFrame = 0;
+        while (mFrame < g_MusicDur[mStep])
+        {
+            Halt();
+            mFrame++;
+
+            // Check for key press
+            u8 kbd = Keyboard_Read(8);
+            if (IS_KEY_PRESSED(kbd, KEY_SPACE)) goto music_done;
+            kbd = Keyboard_Read(5);
+            if (IS_KEY_PRESSED(kbd, KEY_Z)) goto music_done;
+            if ((Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0) goto music_done;
+        }
         mStep++;
-        if (mStep >= MUSIC_NSTEPS) { mStep = 0; }
-
-        Halt();  // Wait for VSYNC
-
-        // Check for key press
-        u8 kbd = Keyboard_Read(8);
-        if (IS_KEY_PRESSED(kbd, KEY_SPACE)) break;
-        kbd = Keyboard_Read(5);
-        if (IS_KEY_PRESSED(kbd, KEY_Z)) break;
-        // Also check joystick
-        if ((Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0) break;
+        if (g_MusicDur[mStep] == 0) { mStep = 0; }  // Loop on terminator
     }
+
+music_done:
 
     MusicSilence();
 

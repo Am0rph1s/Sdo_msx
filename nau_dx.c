@@ -2229,43 +2229,71 @@ void RedrawHsInput()
     }
 }
 
-// Menu starfield - keep stars outside text/hline columns because twinkle rewrites tiles
-#define MENU_STAR_N         40
-#define MENU_STAR_CN        12   // estrelles centrals per TOP3/HELP
+// Menu starfield - safe zones per pantalla
+// MENU: logo (8-23,0-4) + text (11-21,6-15) → lliure: 3-7,24-28 + vores
+// TOP3: taula (8-23,10-16) → lliure: 3-7,24-28 + 3-28,0-7 + vores
+// HELP: text (3-28,5-16) → lliure: només vores 1-2,29-30
 #define MENU_TWINKLE_FRAMES 4
 
-static const u8 g_MenuStarX[MENU_STAR_N] = {
-    0x01,0x02,0x00,0x02,0x01,0x00,0x02,0x01,0x00,0x02,
-    0x01,0x00,0x02,0x01,0x00,0x02,0x01,0x00,0x02,0x01,
-    0x1E,0x1F,0x1D,0x1F,0x1E,0x1D,0x1F,0x1E,0x1D,0x1F,
-    0x1E,0x1D,0x1F,0x1E,0x1D,0x1F,0x1E,0x1D,0x1F,0x1E
+// Estrelles comunes (vores estretes, totes les pantalles)
+#define MENU_STAR_COMMON_N  30
+static const u8 g_MenuStarCX[MENU_STAR_COMMON_N] = {
+    0x01,0x02,0x01,0x02,0x01,0x02,0x01,0x02,0x01,0x02,
+    0x01,0x02,0x01,0x02,0x01,0x02,0x01,0x02,0x01,0x02,
+    0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,
 };
-static const u8 g_MenuStarY[MENU_STAR_N] = {
-    0x01,0x03,0x05,0x06,0x08,0x0A,0x0B,0x0D,0x0E,0x0F,
-    0x10,0x13,0x13,0x14,0x15,0x16,0x02,0x07,0x0D,0x15,
-    0x02,0x03,0x05,0x06,0x08,0x0A,0x0B,0x0D,0x0E,0x0F,
-    0x10,0x13,0x13,0x14,0x15,0x16,0x01,0x07,0x0D,0x15
+static const u8 g_MenuStarCY[MENU_STAR_COMMON_N] = {
+    0x00,0x01,0x03,0x04,0x06,0x07,0x09,0x0A,0x0C,0x0D,
+    0x0F,0x10,0x12,0x13,0x15,0x16,0x18,0x19,0x21,0x22,
+    0x00,0x01,0x03,0x04,0x06,0x07,0x09,0x0A,0x0C,0x0D,
 };
-static const u8 g_MenuStarSeed[MENU_STAR_N] = {
+static const u8 g_MenuStarCS[MENU_STAR_COMMON_N] = {
     0,2,1,3,1,0,3,2,0,1,3,2,2,0,3,1,1,2,0,3,
-    2,0,3,1,3,2,1,0,2,3,0,1,3,2,0,1,2,3,1,0
-};
-static const u8 g_MenuStarCX[MENU_STAR_CN] = {
-    0x07,0x0A,0x0D,0x10,0x13,0x16,0x08,0x0B,0x11,0x14,0x18,0x1B
-};
-static const u8 g_MenuStarCY[MENU_STAR_CN] = {
-    0x02,0x03,0x04,0x05,0x06,0x07,0x13,0x14,0x15,0x16,0x13,0x14
-};
-static const u8 g_MenuStarCS[MENU_STAR_CN] = {
-    0,3,1,2,2,0,3,1,1,2,3,0
+    2,0,3,1,3,2,1,0,2,3,
 };
 
+// Estrelles extra MENU (zones laterals logo + zona central inferior)
+#define MENU_STAR_MENU_N    32
+static const u8 g_MenuStarMX[MENU_STAR_MENU_N] = {
+    // Zones laterals logo (files 0-3) - 20 estrelles
+    0x03,0x04,0x05,0x06,0x07,0x03,0x05,0x07,0x04,0x06,
+    0x18,0x19,0x1A,0x1B,0x1C,0x18,0x1A,0x1C,0x19,0x1B,
+    // Zona central inferior (files 17-19, cols 10-25) - 12 estrelles
+    0x0A,0x0D,0x10,0x13,0x16,0x19,0x0B,0x0E,0x11,0x14,
+    0x17,0x1A,
+};
+static const u8 g_MenuStarMY[MENU_STAR_MENU_N] = {
+    // Zones laterals logo
+    0x00,0x01,0x00,0x01,0x00,0x02,0x02,0x02,0x03,0x03,
+    0x00,0x01,0x00,0x01,0x00,0x02,0x02,0x02,0x03,0x03,
+    // Zona central inferior (rows 17 & 19 decimal = 0x11 & 0x13)
+    0x11,0x11,0x11,0x11,0x11,0x11,0x13,0x13,0x13,0x13,
+    0x13,0x13,
+};
+static const u8 g_MenuStarMS[MENU_STAR_MENU_N] = {
+    1,3,0,2,1,3,0,2,1,3,0,2,1,3,0,2,1,3,0,2,
+    0,1,2,3,0,1,2,3,0,1,2,3,
+};
 
-static u8 g_MenuStarState[MENU_STAR_N];
-static u8 g_MenuStarCState[MENU_STAR_CN];
+// Estrelles extra TOP3 (zona superior + laterals)
+#define MENU_STAR_TOP3_N    24
+static const u8 g_MenuStarTX[MENU_STAR_TOP3_N] = {
+    0x04,0x06,0x08,0x0A,0x0C,0x0E,0x10,0x12,0x14,0x16,0x18,0x1A,
+    0x04,0x06,0x08,0x0A,0x0C,0x0E,0x10,0x12,0x14,0x16,0x18,0x1A,
+};
+static const u8 g_MenuStarTY[MENU_STAR_TOP3_N] = {
+    0x00,0x00,0x01,0x01,0x02,0x02,0x03,0x03,0x04,0x04,0x05,0x05,
+    0x06,0x06,0x07,0x07,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,
+};
+static const u8 g_MenuStarTS[MENU_STAR_TOP3_N] = {
+    0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,
+};
+
+static u8 g_MenuStarState[MENU_STAR_COMMON_N];
+static u8 g_MenuStarMState[MENU_STAR_MENU_N];
+static u8 g_MenuStarTState[MENU_STAR_TOP3_N];
 static u8 g_MenuTwinkleTick = 0;
 static u8 g_MenuTwinkleRng  = 0x5A;
-static u8 g_MenuUseCenter   = 0; // 1=estrelles centrals (TOP3/HELP)
 
 void InitMenuStarTiles()
 {
@@ -2287,57 +2315,83 @@ void InitMenuStarTiles()
 void InitMenuStars()
 {
     u8 i;
-    for (i = 0; i < MENU_STAR_N;  i++) g_MenuStarState[i]  = g_MenuStarSeed[i];
-    for (i = 0; i < MENU_STAR_CN; i++) g_MenuStarCState[i] = g_MenuStarCS[i];
+    for (i = 0; i < MENU_STAR_COMMON_N; i++) g_MenuStarState[i] = g_MenuStarCS[i];
+    for (i = 0; i < MENU_STAR_MENU_N; i++) g_MenuStarMState[i] = g_MenuStarMS[i];
+    for (i = 0; i < MENU_STAR_TOP3_N; i++) g_MenuStarTState[i] = g_MenuStarTS[i];
     g_MenuTwinkleTick = 0;
     g_MenuTwinkleRng  = 0x5A;
 }
 
-void DrawMenuStar(u8 idx)
+static void DrawMenuStarCommon(u8 idx)
 {
-    u8 state, tile, x, y;
-    if (g_MenuUseCenter && idx < MENU_STAR_CN)
-    {
-        x = g_MenuStarCX[idx]; y = g_MenuStarCY[idx];
-        state = g_MenuStarCState[idx];
-    }
-    else if (!g_MenuUseCenter && idx < MENU_STAR_N)
-    {
-        x = g_MenuStarX[idx]; y = g_MenuStarY[idx];
-        state = g_MenuStarState[idx];
-    }
-    else return;
-    tile = (state == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + state - 1);
-    VDP_Poke_GM2(x, y, tile);
+    u8 tile = (g_MenuStarState[idx] == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + g_MenuStarState[idx] - 1);
+    VDP_Poke_GM2(g_MenuStarCX[idx], g_MenuStarCY[idx], tile);
+}
+static void DrawMenuStarMenu(u8 idx)
+{
+    u8 tile = (g_MenuStarMState[idx] == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + g_MenuStarMState[idx] - 1);
+    VDP_Poke_GM2(g_MenuStarMX[idx], g_MenuStarMY[idx], tile);
+}
+static void DrawMenuStarTop3(u8 idx)
+{
+    u8 tile = (g_MenuStarTState[idx] == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + g_MenuStarTState[idx] - 1);
+    VDP_Poke_GM2(g_MenuStarTX[idx], g_MenuStarTY[idx], tile);
+}
+
+static void DrawAllStarsForMode(u8 mode)
+{
+    u8 i;
+    // Clear all extra star positions first
+    for (i = 0; i < MENU_STAR_MENU_N; i++)
+        VDP_Poke_GM2(g_MenuStarMX[i], g_MenuStarMY[i], 0);
+    for (i = 0; i < MENU_STAR_TOP3_N; i++)
+        VDP_Poke_GM2(g_MenuStarTX[i], g_MenuStarTY[i], 0);
+    // Draw common stars
+    for (i = 0; i < MENU_STAR_COMMON_N; i++) DrawMenuStarCommon(i);
+    // Draw mode-specific extra stars
+    if (mode == TS_MENU)
+        for (i = 0; i < MENU_STAR_MENU_N; i++) DrawMenuStarMenu(i);
+    else if (mode == TS_ATTRACT_SCORE)
+        for (i = 0; i < MENU_STAR_TOP3_N; i++) DrawMenuStarTop3(i);
 }
 
 void TickMenuStars()
 {
-    u8 i, j;
-    u8 total = g_MenuUseCenter ? MENU_STAR_CN : MENU_STAR_N;
+    u8 i, j, src;
 
     g_MenuTwinkleTick++;
     if (g_MenuTwinkleTick < MENU_TWINKLE_FRAMES) return;
     g_MenuTwinkleTick = 0;
 
+    // Twinkle common stars
     g_MenuTwinkleRng = (u8)(g_MenuTwinkleRng * 17u + 29u);
     i = g_MenuTwinkleRng;
-    while (i >= total) i = (u8)(i - total);
-    if (g_MenuUseCenter)
-        g_MenuStarCState[i] = (u8)((g_MenuStarCState[i] + 1u) & 3u);
-    else
-        g_MenuStarState[i]  = (u8)((g_MenuStarState[i]  + 1u) & 3u);
-    DrawMenuStar(i);
+    while (i >= MENU_STAR_COMMON_N) i = (u8)(i - MENU_STAR_COMMON_N);
+    g_MenuStarState[i] = (u8)((g_MenuStarState[i] + 1u) & 3u);
+    DrawMenuStarCommon(i);
 
     g_MenuTwinkleRng = (u8)(g_MenuTwinkleRng * 17u + 29u);
     j = g_MenuTwinkleRng;
-    while (j >= total) j = (u8)(j - total);
-    if (j == i) { j = (u8)(i + 7u); while (j >= total) j = (u8)(j - total); }
-    if (g_MenuUseCenter)
-        g_MenuStarCState[j] = (u8)((g_MenuStarCState[j] + 1u) & 3u);
-    else
-        g_MenuStarState[j]  = (u8)((g_MenuStarState[j]  + 1u) & 3u);
-    DrawMenuStar(j);
+    while (j >= MENU_STAR_COMMON_N) j = (u8)(j - MENU_STAR_COMMON_N);
+    if (j == i) { j = (u8)(i + 7u); while (j >= MENU_STAR_COMMON_N) j = (u8)(j - MENU_STAR_COMMON_N); }
+    g_MenuStarState[j] = (u8)((g_MenuStarState[j] + 1u) & 3u);
+    DrawMenuStarCommon(j);
+
+    // Twinkle extra stars based on mode
+    if (g_TitleMode == TS_MENU)
+    {
+        src = g_MenuTwinkleRng;
+        i = src; while (i >= MENU_STAR_MENU_N) i = (u8)(i - MENU_STAR_MENU_N);
+        g_MenuStarMState[i] = (u8)((g_MenuStarMState[i] + 1u) & 3u);
+        DrawMenuStarMenu(i);
+    }
+    else if (g_TitleMode == TS_ATTRACT_SCORE)
+    {
+        src = (u8)(g_MenuTwinkleRng * 13u + 7u);
+        i = src; while (i >= MENU_STAR_TOP3_N) i = (u8)(i - MENU_STAR_TOP3_N);
+        g_MenuStarTState[i] = (u8)((g_MenuStarTState[i] + 1u) & 3u);
+        DrawMenuStarTop3(i);
+    }
 }
 
 // Logo tiles - 80 tiles 16x5 (128x40px)
@@ -2798,32 +2852,16 @@ void UpdateMenuInput()
     {
         InitMenuStarTiles();
         InitMenuStars();
-        g_MenuUseCenter = (g_TitleMode == TS_ATTRACT_SCORE) ? 1 : 0;
-
-        // Dibuixa estrelles inicials
-        {
-            u8 total = g_MenuUseCenter ? MENU_STAR_CN : MENU_STAR_N;
-            for (i = 0; i < total; i++) DrawMenuStar(i);
-            // Estrelles laterals sempre
-            if (g_MenuUseCenter)
-            {
-                for (i = 0; i < MENU_STAR_N; i++)
-                {
-                    u8 state = g_MenuStarState[i];
-                    u8 tile  = (state == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + state - 1);
-                    VDP_Poke_GM2(g_MenuStarX[i], g_MenuStarY[i], tile);
-                }
-            }
-        }
+        DrawAllStarsForMode(g_TitleMode);
     }
     else
     {
         // No stars during hi-score input (they corrupt text)
-        g_MenuUseCenter = 0;
     }
 
     if (g_TitleMode == TS_MENU)
     {
+        DrawAllStarsForMode(TS_MENU);
         DrawLogo();
         HudDrawHLine(3, 4, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(11, 6, "1 JOYSTICK", g_ControlMode == 0 ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM);
@@ -2836,7 +2874,7 @@ void UpdateMenuInput()
     }
     else if (g_TitleMode == TS_ATTRACT_SCORE)
     {
-        // 1:1 CPC: top 3 SENSE logo, amb estrelles centrals
+        DrawAllStarsForMode(TS_ATTRACT_SCORE);
         HudDrawText(13, 8, "TOP  3", HUD_FONT_COLOR_HI);
         HudDrawHLine(3,  9, 26, HUD_FONT_COLOR_CYN);
         DrawHiScoreTable(0xFF);
@@ -2884,11 +2922,10 @@ void UpdateMenuInput()
     }
     else if (g_TitleMode == TS_HISCORE_INPUT)
     {
-        // 1:1 CPC: GAME OVER + TOP3 + taula amb input directe
         HudDrawText(11, 4, "GAME OVER", HUD_FONT_COLOR_HI);
         HudDrawText(13, 6, "TOP 3",     HUD_FONT_COLOR_HI);
         HudDrawHLine(3,  7, 26, HUD_FONT_COLOR_CYN);
-        DrawHiScoreTable(g_HsPos);  // Edita directament a la fila corresponent
+        DrawHiScoreTable(g_HsPos);
         HudDrawHLine(3, 16, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
         HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
@@ -3077,22 +3114,22 @@ void main()
              if (g_TitleMode != TS_HISCORE_INPUT && g_TitleMode != TS_HISCORE_VIEW)
                  TickMenuStars(); // Stars corrupt text in gameover screens
 
-              if (g_TitleDirty)
-              {
-                  if (g_TitleMode == TS_HISCORE_INPUT && g_TitlePhase > 1)
-                  {
-                      // Optimized: only redraw the input line, not the whole screen
-                      RedrawHsInput();
-                  }
-                  else
-                  {
-                      // Full redraw for other screens or first frame of input
-                      DrawMenuScreen();
-                      if (g_TitleMode == TS_HISCORE_INPUT && g_TitlePhase == 0)
-                          g_TitlePhase = 1;  // Full draw done, mark ready for fire wait
-                  }
-                   g_TitleDirty = 0;
-               }
+               if (g_TitleDirty)
+               {
+                   if (g_TitleMode == TS_HISCORE_INPUT && g_TitlePhase > 1)
+                   {
+                       // Optimized: only redraw the input line, not the whole screen
+                       RedrawHsInput();
+                   }
+                    else
+                    {
+                        // Full redraw for other screens or first frame of input
+                        DrawMenuScreen();
+                        if (g_TitleMode == TS_HISCORE_INPUT && g_TitlePhase == 0)
+                            g_TitlePhase = 1;  // Full draw done, mark ready for fire wait
+                    }
+                    g_TitleDirty = 0;
+                }
 
              // Transicio a joc
             if (g_GameState == GS_PLAYING)
