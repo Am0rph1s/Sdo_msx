@@ -73,7 +73,6 @@
 
 // Wave system - 1:1 CPC
 #define WAVE_PLAN_MAX       8
-#define WAVE_MAX_HEAVY_PER_WAVE 3
 #define DIVER_WAVE_MIN      5
 #define DIVER_WAVE_MAX      8
 #define WAVE_MODE_RANK      0
@@ -97,7 +96,6 @@
 // Boss tiers - 1:1 CPC
 #define BOSS_HP_BASE         15
 #define BOSS_HP_PER_TIER     5
-#define BOSS_LANE_W          ((u8)(GAME_W / 3u))  // CPC: screen/3 per lane
 #define BOSS_HOLD_Y          58   // CPC: 74, nosaltres 58 (mes amunt)
 #define BOSS_Y_OSC           22
 #define BOSS_DUAL_LANE_HALF  24
@@ -496,25 +494,25 @@ static const u8 g_EnemyBomberRed[32] = {
 
 static const u8 g_BossWhiteNew[32] = {
     // TL (rows 0-7, cols 0-7)
-    0x00, 0x0F, 0x3F, 0x7F, 0xF0, 0xE0, 0xC0, 0x80,
+    0x0F, 0x3E, 0x7E, 0xFF, 0xF0, 0xE0, 0xC0, 0x80,
     // BL (rows 8-15, cols 0-7)
-    0x80, 0xC0, 0xE0, 0x70, 0x30, 0x18, 0x00, 0x00,
+    0x80, 0x80, 0x80, 0x40, 0x20, 0x10, 0x0C, 0x00,
     // TR (rows 0-7, cols 8-15)
-    0x00, 0xF0, 0xFC, 0xFE, 0x0F, 0x07, 0x03, 0x01,
+    0xF0, 0x7C, 0x7E, 0xFF, 0x0F, 0x07, 0x03, 0x01,
     // BR (rows 8-15, cols 8-15)
-    0x01, 0x03, 0x07, 0x0E, 0x0C, 0x18, 0x00, 0x00
+    0x01, 0x01, 0x01, 0x02, 0x04, 0x08, 0x30, 0x00
 };
 
-// Red layer: core nucleus + yellow accents
+// Red layer: core nucleus + accents
 static const u8 g_BossRedNew[32] = {
     // TL (rows 0-7, cols 0-7)
     0x00, 0x00, 0x00, 0x00, 0x0F, 0x1F, 0x3F, 0x7F,
     // BL (rows 8-15, cols 0-7)
-    0x7F, 0x3F, 0x1F, 0x0F, 0x0F, 0x06, 0x06, 0x00,
+    0x6F, 0x63, 0x6F, 0x3F, 0x1F, 0x0F, 0x03, 0x00,
     // TR (rows 0-7, cols 8-15)
     0x00, 0x00, 0x00, 0x00, 0xF0, 0xF8, 0xFC, 0xFE,
     // BR (rows 8-15, cols 8-15)
-    0xFE, 0xFC, 0xF8, 0xF0, 0xF0, 0x60, 0x60, 0x00
+    0xF6, 0xC6, 0xF6, 0xFC, 0xF8, 0xF0, 0xC0, 0x00
 };
 
 //=============================================================================
@@ -669,36 +667,19 @@ void UpdateBiomeColors()
     InitWallTiles();
 }
 
-// Dibuixa un pixel a la posició (x,y) en mode 2
-// x: pixel coord (0-255), y: pixel coord (0-191)
-void DrawStarPixel(u8 x, u8 y, u8 base)
-{
-    u8 tx = x >> 3;
-    u8 ty = y >> 3;
-    u8 row = y & 7;
-    VDP_Poke_GM2(tx, ty, base + row);
-}
-
-void EraseStarPixel(u8 x, u8 y)
-{
-    u8 tx = x >> 3;
-    u8 ty = y >> 3;
-    VDP_Poke_GM2(tx, ty, 0);
-}
-
 void InitStars(TStar* s, u8 n, u8 base)
 {
     u8 i;
-    // Posicions pseudo-aleatòries pero ben distribuïdes
-    // Usem una sequencia de Halton simplificada per evitar ordenacio
     static const u8 xoff[16] = {11, 37, 63, 21, 51, 7, 41, 27, 57, 17, 47, 31, 3, 53, 13, 45};
     static const u8 yoff[16] = {17, 83, 43, 131, 67, 107, 23, 157, 53, 97, 173, 61, 113, 79, 137, 149};
     u8 span = (u8)(STAR_X1 - STAR_X0);
     for (i = 0; i < n; i++)
     {
-        s[i].x = STAR_X0 + (u8)(((u16)xoff[i] * span) >> 6);
-        s[i].y = yoff[i] % SCREEN_H;
-        DrawStarPixel(s[i].x, s[i].y, base);
+        u8 sx = STAR_X0 + (u8)(((u16)xoff[i] * span) >> 6);
+        u8 sy = yoff[i] % SCREEN_H;
+        s[i].x = sx;
+        s[i].y = sy;
+        VDP_Poke_GM2(sx >> 3, sy >> 3, base + (sy & 7));
     }
 }
 
@@ -1876,8 +1857,7 @@ void UpdateEnemies()
 #define SFX_SHOT        3
 #define SFX_BEEP        4
 #define SFX_GAMEOVER    5
-#define SFX_BOSSWARN    6
-#define SFX_LEVELUP     7
+#define SFX_LEVELUP     6
 
 static u8 sfxA_kind = SFX_NONE, sfxA_frame = 0;
 static u8 sfxB_kind = SFX_NONE, sfxB_frame = 0;
@@ -2427,60 +2407,29 @@ static const u8 g_MenuStarTS[MENU_STAR_TOP3_N] = {
 // Extra stars HISCORE_VIEW: rows 0-5 (above GAMEOVER) + rows 14-22 (below, full width + right edge)
 #define MENU_STAR_HIV_N 26
 static const u8 g_MenuStarHVX[MENU_STAR_HIV_N] = {
-    // Rows 0-5 (above GAMEOVER text)
-    0x06,0x0A,0x0E,0x12,0x16,0x1A,
-    // Cols 29-30, rows 14-16 (right edge gap fill)
-    0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,
-    // Rows 17-22, cols 3-30 (bottom area, spread evenly)
-    0x05,0x09,0x0D,0x11,0x15,0x19,0x1D,
-    0x07,0x0B,0x01,0x13,0x17,0x1B,0x1E,
-    0x04,0x08,0x0C,0x10,0x14,0x18,0x1C,
+    0x06,0x0A,0x0E,0x12,0x16,0x1A, 0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,
+    0x05,0x09,0x0D,0x11,0x15,0x19,0x1D, 0x07,0x0B,0x01,0x13,0x17,0x1B,0x1E
 };
 static const u8 g_MenuStarHVY[MENU_STAR_HIV_N] = {
-    // Rows 0-5
-    0x00,0x01,0x02,0x03,0x04,0x05,
-    // Rows 14-16
-    0x0E,0x0F,0x10,0x11,0x12,0x13,
-    // Rows 17-19
-    0x11,0x11,0x11,0x11,0x11,0x11,0x11,
-    0x12,0x12,0x12,0x12,0x12,0x12,0x12,
-    // Rows 20-22
-    0x13,0x13,0x13,0x13,0x13,0x13,0x13,
+    0x00,0x01,0x02,0x03,0x04,0x05, 0x0E,0x0F,0x10,0x11,0x12,0x13,
+    0x11,0x11,0x11,0x11,0x11,0x11,0x11, 0x12,0x12,0x12,0x12,0x12,0x12,0x12
 };
 static const u8 g_MenuStarHVS[MENU_STAR_HIV_N] = {
-    0,1,2,3,0,1,2,3,0,1,2,3,
-    0,1,2,3,0,1,2,3,0,1,2,3,0,1,
+    0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1
 };
 
 // Extra stars HISCORE_INPUT: rows 0-3 (above GAMEOVER) + rows 14-22 (below table + right edge)
 #define MENU_STAR_HII_N 26
 static const u8 g_MenuStarHIX[MENU_STAR_HII_N] = {
-    // Rows 0-3 (above GAMEOVER text)
-    0x06,0x0A,0x0E,0x12,
-    // Cols 29-30, rows 14-16 (right edge gap fill)
-    0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,
-    // Rows 17-22, cols 3-30 (bottom area, spread evenly)
-    0x05,0x09,0x0D,0x11,0x15,0x19,0x1D,
-    0x07,0x0B,0x0F,0x13,0x17,0x1B,0x1E,
-    0x04,0x08,0x0C,0x10,0x14,0x18,0x1C,
-    0x06,0x0A,0x0E,0x12,
+    0x06,0x0A,0x0E,0x12, 0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,
+    0x05,0x09,0x0D,0x11,0x15,0x19,0x1D, 0x07,0x0B,0x0F,0x13,0x17,0x1B,0x1E, 0x04,0x08
 };
 static const u8 g_MenuStarHIY[MENU_STAR_HII_N] = {
-    // Rows 0-3
-    0x00,0x01,0x02,0x03,
-    // Rows 14-16
-    0x0E,0x0F,0x10,0x11,0x12,0x13,
-    // Rows 17-19
-    0x11,0x11,0x11,0x11,0x11,0x11,0x11,
-    0x12,0x12,0x12,0x12,0x12,0x12,0x12,
-    // Rows 20-22
-    0x13,0x13,0x13,0x13,0x13,0x13,0x13,
-    // Extra top rows
-    0x00,0x01,0x02,0x03,
+    0x00,0x01,0x02,0x03, 0x0E,0x0F,0x10,0x11,0x12,0x13,
+    0x11,0x11,0x11,0x11,0x11,0x11,0x11, 0x12,0x12,0x12,0x12,0x12,0x12,0x12, 0x13,0x13
 };
 static const u8 g_MenuStarHIS[MENU_STAR_HII_N] = {
-    0,1,2,3,2,3,0,1,0,1,2,3,0,1,2,3,
-    0,1,2,3,0,1,2,3,0,1,2,3,0,1,
+    0,1,2,3,2,3,0,1,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1
 };
 
 // Extra stars HELP: cols 29-30, rows 11-22 (right edge, sparse)
@@ -2596,13 +2545,13 @@ static void DrawAllStarsForMode(u8 mode)
 
 void TickMenuStars()
 {
-    u8 i, j, src;
+    u8 i, j;
 
     g_MenuTwinkleTick++;
     if (g_MenuTwinkleTick < MENU_TWINKLE_FRAMES) return;
     g_MenuTwinkleTick = 0;
 
-    // Twinkle common stars
+    // Twinkle 2 common stars
     g_MenuTwinkleRng = (u8)(g_MenuTwinkleRng * 17u + 29u);
     i = g_MenuTwinkleRng;
     while (i >= MENU_STAR_COMMON_N) i = (u8)(i - MENU_STAR_COMMON_N);
@@ -2616,39 +2565,39 @@ void TickMenuStars()
     g_MenuStarState[j] = (u8)((g_MenuStarState[j] + 1u) & 3u);
     DrawMenuStarCommon(j);
 
-    // Twinkle extra stars based on mode
+    // Twinkle 1 extra star based on mode
     if (g_TitleMode == TS_MENU)
     {
-        src = g_MenuTwinkleRng;
-        i = src; while (i >= MENU_STAR_MENU_N) i = (u8)(i - MENU_STAR_MENU_N);
+        i = g_MenuTwinkleRng;
+        while (i >= MENU_STAR_MENU_N) i = (u8)(i - MENU_STAR_MENU_N);
         g_MenuStarMState[i] = (u8)((g_MenuStarMState[i] + 1u) & 3u);
         DrawMenuStarMenu(i);
     }
     else if (g_TitleMode == TS_ATTRACT_SCORE)
     {
-        src = (u8)(g_MenuTwinkleRng * 13u + 7u);
-        i = src; while (i >= MENU_STAR_TOP3_N) i = (u8)(i - MENU_STAR_TOP3_N);
+        i = (u8)(g_MenuTwinkleRng * 13u + 7u);
+        while (i >= MENU_STAR_TOP3_N) i = (u8)(i - MENU_STAR_TOP3_N);
         g_MenuStarTState[i] = (u8)((g_MenuStarTState[i] + 1u) & 3u);
         DrawMenuStarTop3(i);
     }
     else if (g_TitleMode == TS_HISCORE_VIEW)
     {
-        src = (u8)(g_MenuTwinkleRng * 13u + 7u);
-        i = src; while (i >= MENU_STAR_HIV_N) i = (u8)(i - MENU_STAR_HIV_N);
+        i = (u8)(g_MenuTwinkleRng * 13u + 7u);
+        while (i >= MENU_STAR_HIV_N) i = (u8)(i - MENU_STAR_HIV_N);
         g_MenuStarHVState[i] = (u8)((g_MenuStarHVState[i] + 1u) & 3u);
         DrawMenuStarHiV(i);
     }
     else if (g_TitleMode == TS_HISCORE_INPUT)
     {
-        src = (u8)(g_MenuTwinkleRng * 13u + 7u);
-        i = src; while (i >= MENU_STAR_HII_N) i = (u8)(i - MENU_STAR_HII_N);
+        i = (u8)(g_MenuTwinkleRng * 13u + 7u);
+        while (i >= MENU_STAR_HII_N) i = (u8)(i - MENU_STAR_HII_N);
         g_MenuStarHIState[i] = (u8)((g_MenuStarHIState[i] + 1u) & 3u);
         DrawMenuStarHiI(i);
     }
     else if (g_TitleMode == TS_HELP)
     {
-        src = (u8)(g_MenuTwinkleRng * 13u + 7u);
-        i = src; while (i >= MENU_STAR_HELP_N) i = (u8)(i - MENU_STAR_HELP_N);
+        i = (u8)(g_MenuTwinkleRng * 13u + 7u);
+        while (i >= MENU_STAR_HELP_N) i = (u8)(i - MENU_STAR_HELP_N);
         g_MenuStarHState[i] = (u8)((g_MenuStarHState[i] + 1u) & 3u);
         DrawMenuStarHelp(i);
     }
@@ -2834,10 +2783,8 @@ void InitHudFontTiles()
         const u8* tile = g_HudFontTiles + t * 8;
         for (bank = 0; bank < 3; bank++)
         {
-            // Set verd (normal)
             VDP_LoadBankPattern_GM2(tile, 1, bank, HUD_FONT_TILE_BASE + t);
             VDP_LoadBankColor_GM2(color_nrm, 1, bank, HUD_FONT_TILE_BASE + t);
-            // Set blanc (hi)
             VDP_LoadBankPattern_GM2(tile, 1, bank, HUD_FONT_TILE_HI + t);
             VDP_LoadBankColor_GM2(color_hi,  1, bank, HUD_FONT_TILE_HI + t);
         }
@@ -3099,7 +3046,6 @@ void UpdateMenuInput()
 
  void DrawMenuScreen()
 {
-    u8 i;
     VDP_FillScreen_GM2(0);
     InitLogoTiles();
     InitHudFontTiles();
@@ -3194,7 +3140,6 @@ void UpdateMenuInput()
 // Crida quan acaba la partida per anar al menu correcte
 void EnterPostGame(u8 won)
 {
-    u8 s;
     // Atura TOTS els sons abans d'entrar al menu (evita notes perpetuades)
     soundStopAll();
     // Desactiva TOTS els sprites abans d'entrar al menu
@@ -3255,7 +3200,6 @@ void ResetGameSession()
 void InitGamePlay()
 {
     u8 bank, t;
-    u8 s;
     // Inicialitza pantalla de joc
     VDP_FillScreen_GM2(0);
      InitHudFontTiles();   // font per HUD
@@ -3411,7 +3355,6 @@ void main()
                // Quit to menu with redefinable key (joystick: no quit button)
                if (INPUT_QUIT())
               {
-                  u8 s;
                   soundStopAll();
                   // Disable all sprites (ship, enemies, explosions)
                    DisableAllSprites();
@@ -3582,6 +3525,7 @@ void main()
                     // Enemies - WHITE layer first (shapes, high priority)
                   {
                       static const u8 etype_pat_w[5] = {16, 24, 32, 40, 48};
+                      static const u8 etype_col_w[5] = {COLOR_CYAN, COLOR_CYAN, COLOR_GRAY, COLOR_LIGHT_GREEN, COLOR_WHITE};
                       for (i = 0; i < MAX_ENEMIES && spr < 28; i++)
                       {
                           if (!g_Enemies[i].active) continue;
@@ -3592,7 +3536,7 @@ void main()
                           }
                           else
                           {
-                              g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = etype_pat_w[j];  g_SprBuf[spr*4+3] = COLOR_WHITE;      spr++;
+                              g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = etype_pat_w[j];  g_SprBuf[spr*4+3] = etype_col_w[j]; spr++;
                           }
                       }
                   }
