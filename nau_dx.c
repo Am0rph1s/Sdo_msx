@@ -17,10 +17,10 @@
 #define SCREEN_W        256
 #define SCREEN_H        192
 
-// Layout: [col_L 16px][game 144px][col_R 16px][HUD 80px]
+// Layout: [col_L 16px][game 160px][col_R 16px][HUD 64px]
 #define GAME_X0         16
-#define GAME_X1         160
-#define GAME_W          144
+#define GAME_X1         176
+#define GAME_W          160
 #define GAME_Y0         0
 #define GAME_H          SCREEN_H
 
@@ -164,8 +164,8 @@
 #define HLINE_TILE         98   // Tile for cyan separator lines (free slot, outside all ranges)
 #define BAR_FILL_TILE      99   // Tile for boss HP bar fill (free slot)
 
-// HUD right-side layout (columns 22-31)
-#define HUD_COL 22
+// HUD right-side layout (columns 25-31)
+#define HUD_COL 25
 
 // Shared string literals (consolidated to save ROM space)
 static const char g_CreditText[] = "GAME BY XEVIMET4L";
@@ -593,7 +593,7 @@ __asm
     out (#0x98), a
 
     ld a, l
-    add a, #0x14
+    add a, #0x16
     ld d, a
     ld a, h
     adc a, #0x00
@@ -848,12 +848,10 @@ void UpdateHUD()
     static u8 last_bonus_visible = 0xFF;
     static u8 last_bonus_wave = 0xFF;
     static u8 last_has_boss = 0xFF;
-    static u8 last_boss_filled = 0xFF;
+    static u8 last_boss0_filled = 0xFF;
+    static u8 last_boss1_filled = 0xFF;
     u8 i, t;
-    u8 has_boss = 0;
-    u8 cur_hp = 0;
-    u8 max_hp = 0;
-    u8 boss_filled = 0;
+    u8 boss_count = 0;
     u8 full;
     u8 bonus_visible;
     u16 s;
@@ -865,9 +863,9 @@ void UpdateHUD()
 
     if (full)
     {
-        HudDrawText(HUD_COL, 0, "SCORE", HUD_FONT_COLOR_NRM);
-        HudDrawText(HUD_COL, 6, "LEVEL", HUD_FONT_COLOR_NRM);
-        HudDrawText(HUD_COL, 9, "LIVES", HUD_FONT_COLOR_NRM);
+        HudDrawText(HUD_COL, 1, "SCORE", HUD_FONT_COLOR_NRM);
+        HudDrawText(HUD_COL, 9, "LEVEL", HUD_FONT_COLOR_NRM);
+        HudDrawText(HUD_COL, 12, "LIVES", HUD_FONT_COLOR_NRM);
     }
 
     if (full || last_score != g_Score)
@@ -879,7 +877,7 @@ void UpdateHUD()
         buf[1] = (char)('0' + s % 10); s /= 10;
         buf[0] = (char)('0' + s % 10);
         buf[5] = 0;
-        HudDrawText(HUD_COL, 1, buf, HUD_FONT_COLOR_HI);
+        HudDrawText(HUD_COL, 2, buf, HUD_FONT_COLOR_HI);
         last_score = g_Score;
     }
 
@@ -888,16 +886,16 @@ void UpdateHUD()
     {
         if (bonus_visible)
         {
-            HudDrawText(HUD_COL, 3, "BONUS", HUD_FONT_COLOR_NRM);
+            HudDrawText(HUD_COL, 5, "BONUS", HUD_FONT_COLOR_NRM);
             buf[0] = 'X';
             buf[1] = (char)('0' + g_WaveTotal);
             buf[2] = 0;
-            HudDrawText(HUD_COL, 4, buf, HUD_FONT_COLOR_HI);
+            HudDrawText(HUD_COL, 6, buf, HUD_FONT_COLOR_HI);
         }
         else
         {
-            HudDrawText(HUD_COL, 3, "     ", HUD_FONT_COLOR_NRM);
-            HudDrawText(HUD_COL, 4, "     ", HUD_FONT_COLOR_NRM);
+            HudDrawText(HUD_COL, 5, "     ", HUD_FONT_COLOR_NRM);
+            HudDrawText(HUD_COL, 6, "     ", HUD_FONT_COLOR_NRM);
         }
         last_bonus_visible = bonus_visible;
         last_bonus_wave = g_WaveTotal;
@@ -908,7 +906,7 @@ void UpdateHUD()
         buf[0] = (char)('0' + g_Level / 10);
         buf[1] = (char)('0' + g_Level % 10);
         buf[2] = 0;
-        HudDrawText(HUD_COL, 7, buf, HUD_FONT_COLOR_HI);
+        HudDrawText(HUD_COL, 10, buf, HUD_FONT_COLOR_HI);
         last_level = g_Level;
     }
 
@@ -916,38 +914,37 @@ void UpdateHUD()
     {
         buf[0] = (char)('0' + g_Lives);
         buf[1] = 0;
-        HudDrawText(HUD_COL, 10, buf, HUD_FONT_COLOR_HI);
+        HudDrawText(HUD_COL, 13, buf, HUD_FONT_COLOR_HI);
         last_lives = g_Lives;
     }
 
-    for (i = 0; i < MAX_ENEMIES; i++)
+    // Boss HP bars: first at row 17, second (dual) at row 19
     {
-        if (g_Enemies[i].active && g_Enemies[i].type == ENEMY_TYPE_BOSS)
+        u8 br, bhp[2], bmx[2];
+        bhp[0] = bhp[1] = bmx[0] = bmx[1] = 0;
+        for (i = 0; i < MAX_ENEMIES && boss_count < 2; i++)
+            if (g_Enemies[i].active && g_Enemies[i].type == ENEMY_TYPE_BOSS)
+                { bhp[boss_count] = g_Enemies[i].health; bmx[boss_count] = g_Enemies[i].boss_hp_max; boss_count++; }
+        for (br = 0; br < boss_count; br++)
         {
-            cur_hp = g_Enemies[i].health;
-            max_hp = g_Enemies[i].boss_hp_max;
-            has_boss = 1;
-            break;
+            u8 bm = bmx[br] ? bmx[br] : GetBossMaxHP(BossTierFromLevel(g_Level));
+            u8 bf = (u8)((u16)bhp[br] * 5u / bm);
+            u8 row = (u8)(17 + br * 2);
+            u8 *last = (br == 0) ? &last_boss0_filled : &last_boss1_filled;
+            if (full || last_has_boss != boss_count || *last != bf)
+                HudDrawText(HUD_COL, row, "HP", HUD_FONT_COLOR_HI);
+            if (full || last_has_boss != boss_count || *last != bf)
+                for (t = 0; t < 5; t++)
+                    VDP_Poke_GM2((u8)(HUD_COL + 3 + t), row, (t < bf) ? BAR_FILL_TILE : 0);
+            *last = bf;
         }
-    }
-    if (has_boss)
-    {
-        if (!max_hp) max_hp = GetBossMaxHP(BossTierFromLevel(g_Level));
-        boss_filled = (u8)((u16)cur_hp * 5u / max_hp);
-        if (full || last_has_boss != has_boss)
-            HudDrawText(HUD_COL, 13, "HP", HUD_FONT_COLOR_HI);
-        if (full || last_has_boss != has_boss || last_boss_filled != boss_filled)
+        if (full || last_has_boss != boss_count)
         {
-            for (t = 0; t < 5; t++)
-                VDP_Poke_GM2((u8)(HUD_COL + 3 + t), 13, (t < boss_filled) ? BAR_FILL_TILE : 0);
+            if (boss_count < 2) HudDrawText(HUD_COL, 19, "          ", HUD_FONT_COLOR_NRM);
+            if (boss_count < 1) HudDrawText(HUD_COL, 17, "          ", HUD_FONT_COLOR_NRM);
         }
+        last_has_boss = boss_count;
     }
-    else if (full || last_has_boss != has_boss)
-    {
-        HudDrawText(HUD_COL, 13, "          ", HUD_FONT_COLOR_NRM);
-    }
-    last_has_boss = has_boss;
-    last_boss_filled = boss_filled;
 
     g_HudDirty = 0;
 }
@@ -2427,28 +2424,63 @@ static const u8 g_MenuStarTS[MENU_STAR_TOP3_N] = {
     0,1,2,3,
 };
 
-// Extra stars HISCORE_VIEW: rows 0-5 (above GAMEOVER) + rows 19-22 (below PRESS ANY KEY)
-#define MENU_STAR_HIV_N 12
+// Extra stars HISCORE_VIEW: rows 0-5 (above GAMEOVER) + rows 14-22 (below, full width + right edge)
+#define MENU_STAR_HIV_N 26
 static const u8 g_MenuStarHVX[MENU_STAR_HIV_N] = {
-    0x06,0x0A,0x0E,0x12,0x16,0x1A,0x08,0x0C,0x10,0x14,0x18,0x05,
+    // Rows 0-5 (above GAMEOVER text)
+    0x06,0x0A,0x0E,0x12,0x16,0x1A,
+    // Cols 29-30, rows 14-16 (right edge gap fill)
+    0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,
+    // Rows 17-22, cols 3-30 (bottom area, spread evenly)
+    0x05,0x09,0x0D,0x11,0x15,0x19,0x1D,
+    0x07,0x0B,0x01,0x13,0x17,0x1B,0x1E,
+    0x04,0x08,0x0C,0x10,0x14,0x18,0x1C,
 };
 static const u8 g_MenuStarHVY[MENU_STAR_HIV_N] = {
-    0x00,0x01,0x02,0x03,0x04,0x05,0x00,0x01,0x02,0x03,0x04,0x13,
+    // Rows 0-5
+    0x00,0x01,0x02,0x03,0x04,0x05,
+    // Rows 14-16
+    0x0E,0x0F,0x10,0x11,0x12,0x13,
+    // Rows 17-19
+    0x11,0x11,0x11,0x11,0x11,0x11,0x11,
+    0x12,0x12,0x12,0x12,0x12,0x12,0x12,
+    // Rows 20-22
+    0x13,0x13,0x13,0x13,0x13,0x13,0x13,
 };
 static const u8 g_MenuStarHVS[MENU_STAR_HIV_N] = {
     0,1,2,3,0,1,2,3,0,1,2,3,
+    0,1,2,3,0,1,2,3,0,1,2,3,0,1,
 };
 
-// Extra stars HISCORE_INPUT: rows 0-3 (above GAMEOVER) + rows 17-22 (below table)
-#define MENU_STAR_HII_N 12
+// Extra stars HISCORE_INPUT: rows 0-3 (above GAMEOVER) + rows 14-22 (below table + right edge)
+#define MENU_STAR_HII_N 26
 static const u8 g_MenuStarHIX[MENU_STAR_HII_N] = {
-    0x06,0x0A,0x0E,0x12,0x16,0x1A,0x08,0x0C,0x10,0x14,0x18,0x05,
+    // Rows 0-3 (above GAMEOVER text)
+    0x06,0x0A,0x0E,0x12,
+    // Cols 29-30, rows 14-16 (right edge gap fill)
+    0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,
+    // Rows 17-22, cols 3-30 (bottom area, spread evenly)
+    0x05,0x09,0x0D,0x11,0x15,0x19,0x1D,
+    0x07,0x0B,0x0F,0x13,0x17,0x1B,0x1E,
+    0x04,0x08,0x0C,0x10,0x14,0x18,0x1C,
+    0x06,0x0A,0x0E,0x12,
 };
 static const u8 g_MenuStarHIY[MENU_STAR_HII_N] = {
-    0x00,0x01,0x02,0x03,0x00,0x01,0x02,0x03,0x00,0x01,0x02,0x11,
+    // Rows 0-3
+    0x00,0x01,0x02,0x03,
+    // Rows 14-16
+    0x0E,0x0F,0x10,0x11,0x12,0x13,
+    // Rows 17-19
+    0x11,0x11,0x11,0x11,0x11,0x11,0x11,
+    0x12,0x12,0x12,0x12,0x12,0x12,0x12,
+    // Rows 20-22
+    0x13,0x13,0x13,0x13,0x13,0x13,0x13,
+    // Extra top rows
+    0x00,0x01,0x02,0x03,
 };
 static const u8 g_MenuStarHIS[MENU_STAR_HII_N] = {
-    0,1,2,3,0,1,2,3,0,1,2,3,
+    0,1,2,3,2,3,0,1,0,1,2,3,0,1,2,3,
+    0,1,2,3,0,1,2,3,0,1,2,3,0,1,
 };
 
 // Extra stars HELP: cols 29-30, rows 11-22 (right edge, sparse)
@@ -3233,9 +3265,9 @@ DisableAllSprites();
 
     // Draw HUD labels immediately (VDP_FillScreen_GM2 cleared name table,
     // and UpdateHUD's static vars still hold old values so won't redraw labels)
-    HudDrawText(HUD_COL, 0, "SCORE", HUD_FONT_COLOR_NRM);
-    HudDrawText(HUD_COL, 6, "LEVEL", HUD_FONT_COLOR_NRM);
-    HudDrawText(HUD_COL, 9, "LIVES", HUD_FONT_COLOR_NRM);
+    HudDrawText(HUD_COL, 1, "SCORE", HUD_FONT_COLOR_NRM);
+    HudDrawText(HUD_COL, 9, "LEVEL", HUD_FONT_COLOR_NRM);
+    HudDrawText(HUD_COL, 12, "LIVES", HUD_FONT_COLOR_NRM);
     // Precarrega patro de barra HP (tile 135, càrrega única)
     {
         u8 bar_col[8];
