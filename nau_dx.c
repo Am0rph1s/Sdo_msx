@@ -167,6 +167,22 @@
 // HUD right-side layout (columns 22-31)
 #define HUD_COL 22
 
+// Shared string literals (consolidated to save ROM space)
+static const char g_CreditText[] = "GAME BY XEVIMET4L";
+static const char g_YearText[] = "2026";
+static const char g_FireStartText[] = "FIRE TO START";
+static const char g_FireMenuText[] = "PRESS FIRE TO MENU";
+static const char g_Top3Text[] = "TOP 3";
+static const char g_GameOverText[] = "GAME OVER";
+
+// Helper: disable all 32 sprites
+static void DisableAllSprites()
+{
+    u8 s;
+    for (s = 0; s < 32; s++)
+        VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
+}
+
 // Helper: check if a redefinable key is pressed
 u8 IsKeyPressed(u8 key) { return IS_KEY_PRESSED(Keyboard_Read(key & 0x0F), key); }
 
@@ -797,24 +813,12 @@ void EnterPostGame(u8 won);
 void InitGamePlay(void);
 static u8 BossTierFromLevel(u8 lv);
 
-
-
-
-// Boss max HP per tier (defined in table below)
-static u8 GetBossMaxHP(u8 tier)
-{
-    return (u8)(BOSS_HP_BASE + tier * BOSS_HP_PER_TIER);
-}
+// Boss max HP per tier (macro to save function call overhead)
+#define GetBossMaxHP(t) ((u8)(BOSS_HP_BASE + (t) * BOSS_HP_PER_TIER))
 
 static u8 ScoreFloorExtraLives(u16 s)
 {
-    u8 n = 0;
-    while (s >= EXTRA_LIFE_EVERY)
-    {
-        s = (u16)(s - EXTRA_LIFE_EVERY);
-        n++;
-    }
-    return n;
+    return (u8)(s / EXTRA_LIFE_EVERY);
 }
 
 static void AddScore(u16 points)
@@ -2337,43 +2341,6 @@ void DrawHiScoreTable(u8 inputPos)
     }
 }
 
-// Redraw only the hi-score input row (fast update without full redraw)
-void RedrawHsInput()
-{
-    // Redibuixa la fila sencera on s'estan editant les inicials
-    char buf[17];
-    u8 i;
-    for (i = 0; i < HISCORE_COUNT; i++)
-    {
-        if (i == g_HsPos)
-        {
-            u16 ss = g_LastScore;
-            buf[0] = (char)('1' + i);
-            buf[1] = ' ';
-            buf[6] = (char)('0' + ss % 10); ss /= 10;
-            buf[5] = (char)('0' + ss % 10); ss /= 10;
-            buf[4] = (char)('0' + ss % 10); ss /= 10;
-            buf[3] = (char)('0' + ss % 10); ss /= 10;
-            buf[2] = (char)('0' + ss % 10);
-            buf[7]  = ' ';
-            buf[8]  = 'L'; buf[9]  = 'V';
-            buf[10] = (char)('0' + g_LastLevel / 10);
-            buf[11] = (char)('0' + g_LastLevel % 10);
-            buf[13] = ' ';
-            buf[13] = (char)g_HsInputChar[0];
-            buf[14] = (char)g_HsInputChar[1];
-            buf[15] = (char)g_HsInputChar[2];
-            buf[16] = 0;
-            u8 color = (i == 0) ? HUD_FONT_COLOR_HI : HUD_FONT_COLOR_NRM;
-            HudDrawText(8, (u8)(10 + i * 2), buf, color);
-            // Cursor
-            char c[2];
-            c[0] = (char)g_HsInputChar[g_HsInputPos]; c[1] = 0;
-            HudDrawText((u8)(8 + 13 + g_HsInputPos), (u8)(10 + i * 2), c, HUD_FONT_COLOR_HI);
-        }
-    }
-}
-
 // Menu starfield - safe zones per pantalla
 // MENU: logo (8-23,0-4) + text (11-21,6-15) → lliure: 3-7,24-28 + vores
 // TOP3: taula (8-23,10-16) → lliure: 3-7,24-28 + 3-28,0-7 + vores
@@ -2397,41 +2364,67 @@ static const u8 g_MenuStarCS[MENU_STAR_COMMON_N] = {
     2,0,3,1,3,2,1,0,2,3,
 };
 
-// Estrelles extra MENU (zones laterals logo + zona central inferior)
-#define MENU_STAR_MENU_N    32
+// Estrelles extra MENU (zones laterals logo + zona central inferior + zones buides)
+#define MENU_STAR_MENU_N    47
 static const u8 g_MenuStarMX[MENU_STAR_MENU_N] = {
     // Zones laterals logo (files 0-3) - 20 estrelles
     0x03,0x04,0x05,0x06,0x07,0x03,0x05,0x07,0x04,0x06,
     0x18,0x19,0x1A,0x1B,0x1C,0x18,0x1A,0x1C,0x19,0x1B,
-    // Zona central inferior (files 17-19, cols 10-25) - 12 estrelles
+    // Zona central inferior (files 17-19, cols 10-19) - 12 estrelles
     0x0A,0x0D,0x10,0x13,0x16,0x19,0x0B,0x0E,0x11,0x14,
     0x17,0x1A,
+    // Zona esquerra inferior (cols 3-9, files 17-19) - 9 estrelles
+    0x03,0x05,0x07,0x09,0x04,0x06,0x08,0x03,0x05,
+    // Zona dreta estesa (cols 29-30, files 14-19) - 6 estrelles (escampades)
+    0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,
 };
 static const u8 g_MenuStarMY[MENU_STAR_MENU_N] = {
     // Zones laterals logo
     0x00,0x01,0x00,0x01,0x00,0x02,0x02,0x02,0x03,0x03,
     0x00,0x01,0x00,0x01,0x00,0x02,0x02,0x02,0x03,0x03,
-    // Zona central inferior (rows 17 & 19 decimal = 0x11 & 0x13)
+    // Zona central inferior (rows 17 & 19)
     0x11,0x11,0x11,0x11,0x11,0x11,0x13,0x13,0x13,0x13,
     0x13,0x13,
+    // Zona esquerra inferior (rows 17,18,19)
+    0x11,0x11,0x11,0x11,0x12,0x12,0x12,0x13,0x13,
+    // Zona dreta estesa (rows 14-19, una per fila)
+    0x0E,0x0F,0x10,0x11,0x12,0x13,
 };
 static const u8 g_MenuStarMS[MENU_STAR_MENU_N] = {
     1,3,0,2,1,3,0,2,1,3,0,2,1,3,0,2,1,3,0,2,
     0,1,2,3,0,1,2,3,0,1,2,3,
+    1,0,3,2,1,0,3,2,1,
+    0,2,1,3,0,2,
 };
 
-// Estrelles extra TOP3 (zona superior + laterals)
-#define MENU_STAR_TOP3_N    24
+// Estrelles extra TOP3 (zona superior + dreta mitjana + inferior)
+#define MENU_STAR_TOP3_N    42
 static const u8 g_MenuStarTX[MENU_STAR_TOP3_N] = {
-    0x04,0x06,0x08,0x0A,0x0C,0x0E,0x10,0x12,0x14,0x16,0x18,0x1A,
-    0x04,0x06,0x08,0x0A,0x0C,0x0E,0x10,0x12,0x14,0x16,0x18,0x1A,
+    // Zona superior (cols 3-28, files 0-7) - 16 estrelles escampades
+    0x03,0x07,0x0B,0x0F,0x13,0x17,0x1B,0x1F,
+    0x05,0x09,0x0D,0x11,0x15,0x19,0x1D,0x1C,
+    // Zona dreta mitjana (cols 29-30, files 13-16) - 8 estrelles
+    0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,
+    // Zona inferior (cols 3-30, files 17-22) - 18 estrelles
+    0x05,0x0B,0x11,0x17,0x1D,0x07,0x0D,0x13,
+    0x19,0x1F,0x09,0x0F,0x15,0x1B,0x1C,0x0B,
+    0x11,0x17,
 };
 static const u8 g_MenuStarTY[MENU_STAR_TOP3_N] = {
-    0x00,0x00,0x01,0x01,0x02,0x02,0x03,0x03,0x04,0x04,0x05,0x05,
-    0x06,0x06,0x07,0x07,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,
+    // Zona superior - files 0-7 (escampades)
+    0x00,0x00,0x01,0x01,0x02,0x02,0x03,0x03,
+    0x04,0x04,0x05,0x05,0x06,0x06,0x07,0x07,
+    // Zona dreta mitjana - files 13-16
+    0x0D,0x0D,0x0E,0x0E,0x0F,0x0F,0x10,0x10,
+    // Zona inferior - files 17-22
+    0x11,0x11,0x11,0x11,0x11,0x12,0x12,0x12,
+    0x12,0x12,0x13,0x13,0x13,0x13,0x13,0x14,
+    0x14,0x14,
 };
 static const u8 g_MenuStarTS[MENU_STAR_TOP3_N] = {
-    0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,
+    0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,
+    0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3,
+    0,1,2,3,
 };
 
 // Extra stars HISCORE_VIEW: rows 0-5 (above GAMEOVER) + rows 19-22 (below PRESS ANY KEY)
@@ -2458,11 +2451,24 @@ static const u8 g_MenuStarHIS[MENU_STAR_HII_N] = {
     0,1,2,3,0,1,2,3,0,1,2,3,
 };
 
+// Extra stars HELP: cols 29-30, rows 11-22 (right edge, sparse)
+#define MENU_STAR_HELP_N 8
+static const u8 g_MenuStarHX[MENU_STAR_HELP_N] = {
+    0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,0x1D,0x1E,
+};
+static const u8 g_MenuStarHY[MENU_STAR_HELP_N] = {
+    0x0B,0x0C,0x0E,0x10,0x12,0x14,0x15,0x16,
+};
+static const u8 g_MenuStarHS[MENU_STAR_HELP_N] = {
+    0,1,2,3,0,1,2,3,
+};
+
 static u8 g_MenuStarState[MENU_STAR_COMMON_N];
 static u8 g_MenuStarMState[MENU_STAR_MENU_N];
 static u8 g_MenuStarTState[MENU_STAR_TOP3_N];
 static u8 g_MenuStarHVState[MENU_STAR_HIV_N];
 static u8 g_MenuStarHIState[MENU_STAR_HII_N];
+static u8 g_MenuStarHState[MENU_STAR_HELP_N];
 static u8 g_MenuTwinkleTick = 0;
 static u8 g_MenuTwinkleRng  = 0x5A;
 
@@ -2491,6 +2497,7 @@ void InitMenuStars()
     for (i = 0; i < MENU_STAR_TOP3_N; i++) g_MenuStarTState[i] = g_MenuStarTS[i];
     for (i = 0; i < MENU_STAR_HIV_N; i++) g_MenuStarHVState[i] = g_MenuStarHVS[i];
     for (i = 0; i < MENU_STAR_HII_N; i++) g_MenuStarHIState[i] = g_MenuStarHIS[i];
+    for (i = 0; i < MENU_STAR_HELP_N; i++) g_MenuStarHState[i] = g_MenuStarHS[i];
     g_MenuTwinkleTick = 0;
     g_MenuTwinkleRng  = 0x5A;
 }
@@ -2520,6 +2527,11 @@ static void DrawMenuStarHiI(u8 idx)
     u8 tile = (g_MenuStarHIState[idx] == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + g_MenuStarHIState[idx] - 1);
     VDP_Poke_GM2(g_MenuStarHIX[idx], g_MenuStarHIY[idx], tile);
 }
+static void DrawMenuStarHelp(u8 idx)
+{
+    u8 tile = (g_MenuStarHState[idx] == 0) ? 0 : (u8)(MENU_STAR_TILE_BASE + g_MenuStarHState[idx] - 1);
+    VDP_Poke_GM2(g_MenuStarHX[idx], g_MenuStarHY[idx], tile);
+}
 
 static void DrawAllStarsForMode(u8 mode)
 {
@@ -2533,6 +2545,8 @@ static void DrawAllStarsForMode(u8 mode)
         VDP_Poke_GM2(g_MenuStarHVX[i], g_MenuStarHVY[i], 0);
     for (i = 0; i < MENU_STAR_HII_N; i++)
         VDP_Poke_GM2(g_MenuStarHIX[i], g_MenuStarHIY[i], 0);
+    for (i = 0; i < MENU_STAR_HELP_N; i++)
+        VDP_Poke_GM2(g_MenuStarHX[i], g_MenuStarHY[i], 0);
     // Draw common stars
     for (i = 0; i < MENU_STAR_COMMON_N; i++) DrawMenuStarCommon(i);
     // Draw mode-specific extra stars
@@ -2544,6 +2558,8 @@ static void DrawAllStarsForMode(u8 mode)
         for (i = 0; i < MENU_STAR_HIV_N; i++) DrawMenuStarHiV(i);
     else if (mode == TS_HISCORE_INPUT)
         for (i = 0; i < MENU_STAR_HII_N; i++) DrawMenuStarHiI(i);
+    else if (mode == TS_HELP)
+        for (i = 0; i < MENU_STAR_HELP_N; i++) DrawMenuStarHelp(i);
 }
 
 void TickMenuStars()
@@ -2596,6 +2612,13 @@ void TickMenuStars()
         i = src; while (i >= MENU_STAR_HII_N) i = (u8)(i - MENU_STAR_HII_N);
         g_MenuStarHIState[i] = (u8)((g_MenuStarHIState[i] + 1u) & 3u);
         DrawMenuStarHiI(i);
+    }
+    else if (g_TitleMode == TS_HELP)
+    {
+        src = (u8)(g_MenuTwinkleRng * 13u + 7u);
+        i = src; while (i >= MENU_STAR_HELP_N) i = (u8)(i - MENU_STAR_HELP_N);
+        g_MenuStarHState[i] = (u8)((g_MenuStarHState[i] + 1u) & 3u);
+        DrawMenuStarHelp(i);
     }
 }
 
@@ -2903,7 +2926,7 @@ void UpdateMenuInput()
         if ((g_BlinkCtr & 0x10) != ((u8)(g_BlinkCtr - 1) & 0x10))
         {
             if (g_BlinkCtr & 0x10)
-                HudDrawText(9, 15, "FIRE TO START", HUD_FONT_COLOR_HI);
+                HudDrawText(9, 15, g_FireStartText, HUD_FONT_COLOR_HI);
             else
                 HudDrawText(9, 15, "             ", HUD_FONT_COLOR_HI);
         }
@@ -2932,10 +2955,8 @@ void UpdateMenuInput()
          {
              g_TitleMode = TS_MENU; g_TitleDirty = 1; g_TitlePhase = 0;
              g_AttractFrm = 0; g_AttractCycle = 0;
-             // Limpia sprites al volver al menú
-             u8 s;
-             for (s = 0; s < 32; s++)
-                 VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
+              // Limpia sprites al volver al menú
+              DisableAllSprites();
          }
      }
     else if (g_TitleMode == TS_WIN)
@@ -3065,28 +3086,28 @@ void UpdateMenuInput()
         HudDrawText(11,10, "3 SET KEYS", HUD_FONT_COLOR_NRM);
         HudDrawHLine(3, 13, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(9, 15, "FIRE TO START", HUD_FONT_COLOR_HI);
-        HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
-        HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
+        HudDrawText(0, 23, g_CreditText, HUD_FONT_COLOR_NRM);
+        HudDrawText(28, 23, g_YearText, HUD_FONT_COLOR_NRM);
     }
     else if (g_TitleMode == TS_ATTRACT_SCORE)
     {
-        HudDrawText(13, 8, "TOP  3", HUD_FONT_COLOR_HI);
+        HudDrawText(13, 8, g_Top3Text, HUD_FONT_COLOR_HI);
         HudDrawHLine(3,  9, 26, HUD_FONT_COLOR_CYN);
         DrawHiScoreTable(0xFF);
         HudDrawHLine(3, 16, 26, HUD_FONT_COLOR_CYN);
-        HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
-        HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
+        HudDrawText(0, 23, g_CreditText, HUD_FONT_COLOR_NRM);
+        HudDrawText(28, 23, g_YearText, HUD_FONT_COLOR_NRM);
     }
     else if (g_TitleMode == TS_HISCORE_VIEW)
     {
-        HudDrawText(11, 6, "GAME OVER", HUD_FONT_COLOR_HI);
-        HudDrawText(13, 8, "TOP 3",     HUD_FONT_COLOR_HI);
+        HudDrawText(11, 6, g_GameOverText, HUD_FONT_COLOR_HI);
+        HudDrawText(13, 8, g_Top3Text, HUD_FONT_COLOR_HI);
         HudDrawHLine(3,  9, 26, HUD_FONT_COLOR_CYN);
         DrawHiScoreTable(0xFF);
         HudDrawHLine(3, 16, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(9, 18, "PRESS ANY KEY", HUD_FONT_COLOR_HI);
-        HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
-        HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
+        HudDrawText(0, 23, g_CreditText, HUD_FONT_COLOR_NRM);
+        HudDrawText(28, 23, g_YearText, HUD_FONT_COLOR_NRM);
     }
     else if (g_TitleMode == TS_HELP)
     {
@@ -3100,8 +3121,8 @@ void UpdateMenuInput()
         HudDrawText(4,15,  "COMPLETE WAVE FOR BONUS",   HUD_FONT_COLOR_NRM);
         HudDrawHLine(3, 17, 26, HUD_FONT_COLOR_CYN);
         HudDrawText(10, 19, "FIRE TO MENU", HUD_FONT_COLOR_HI);
-        HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
-        HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
+        HudDrawText(0, 23, g_CreditText, HUD_FONT_COLOR_NRM);
+        HudDrawText(28, 23, g_YearText, HUD_FONT_COLOR_NRM);
     }
     else if (g_TitleMode == TS_WIN)
     {
@@ -3111,9 +3132,9 @@ void UpdateMenuInput()
         HudDrawText(6,  8, "THE INVASION IS OVER",  HUD_FONT_COLOR_NRM);
         HudDrawText(5, 10, "THANK YOU FOR PLAYING", HUD_FONT_COLOR_NRM);
         HudDrawHLine(3, 13, 26, HUD_FONT_COLOR_NRM);
-        HudDrawText(6, 20, "PRESS FIRE TO MENU", HUD_FONT_COLOR_HI);
-        HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
-        HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
+        HudDrawText(6, 20, g_FireMenuText, HUD_FONT_COLOR_HI);
+        HudDrawText(0, 23, g_CreditText, HUD_FONT_COLOR_NRM);
+        HudDrawText(28, 23, g_YearText, HUD_FONT_COLOR_NRM);
     }
     else if (g_TitleMode == TS_HISCORE_INPUT)
     {
@@ -3122,8 +3143,8 @@ void UpdateMenuInput()
         HudDrawHLine(3,  7, 26, HUD_FONT_COLOR_CYN);
         DrawHiScoreTable(g_HsPos);
         HudDrawHLine(3, 16, 26, HUD_FONT_COLOR_CYN);
-        HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
-        HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
+        HudDrawText(0, 23, g_CreditText, HUD_FONT_COLOR_NRM);
+        HudDrawText(28, 23, g_YearText, HUD_FONT_COLOR_NRM);
     }
     else if (g_TitleMode == TS_REDEFINE)
     {
@@ -3133,8 +3154,8 @@ void UpdateMenuInput()
         if (g_RedefineStep < 7)
             HudDrawText(13, 13, key_names[g_RedefineStep], HUD_FONT_COLOR_HI);
         HudDrawText(10, 16, "PRESS A KEY", HUD_FONT_COLOR_NRM);
-        HudDrawText(0, 23, "GAME BY XEVIMET4L", HUD_FONT_COLOR_NRM);
-        HudDrawText(28, 23, "2026", HUD_FONT_COLOR_NRM);
+        HudDrawText(0, 23, g_CreditText, HUD_FONT_COLOR_NRM);
+        HudDrawText(28, 23, g_YearText, HUD_FONT_COLOR_NRM);
     }
 }
 
@@ -3145,8 +3166,7 @@ void EnterPostGame(u8 won)
     // Atura TOTS els sons abans d'entrar al menu (evita notes perpetuades)
     soundStopAll();
     // Desactiva TOTS els sprites abans d'entrar al menu
-    for (s = 0; s < 32; s++)
-        VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
+DisableAllSprites();
 
     g_LastScore = g_Score;
     g_LastLevel = g_Level;
@@ -3209,8 +3229,7 @@ void InitGamePlay()
      InitHudFontTiles();   // font per HUD
 
     // Disable all sprites before starting game
-    for (s = 0; s < 32; s++)
-        VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
+DisableAllSprites();
 
     // Draw HUD labels immediately (VDP_FillScreen_GM2 cleared name table,
     // and UpdateHUD's static vars still hold old values so won't redraw labels)
@@ -3294,8 +3313,7 @@ void main()
     DrawMenuScreen();
 
     // Disable all sprites durant el menu
-    for (i = 0; i < 32; i++)
-        VDP_SetSpritePositionY(i, VDP_SPRITE_DISABLE_SM1);
+    DisableAllSprites();
 
     while (1)
     {
@@ -3309,13 +3327,13 @@ void main()
              UpdateMenuInput();
              TickMenuStars();
 
-               if (g_TitleDirty)
-               {
-                   if (g_TitleMode == TS_HISCORE_INPUT && g_TitlePhase > 1)
-                   {
-                       // Optimized: only redraw the input line, not the whole screen
-                       RedrawHsInput();
-                   }
+                if (g_TitleDirty)
+                {
+                    if (g_TitleMode == TS_HISCORE_INPUT && g_TitlePhase > 1)
+                    {
+                        // Redraw hi-score table with input cursor
+                        DrawHiScoreTable(g_HsPos);
+                    }
                     else
                     {
                         // Full redraw for other screens or first frame of input
@@ -3344,11 +3362,9 @@ void main()
                    g_PausedFlag = !g_PausedFlag;
                    if (g_PausedFlag)
                    {
-                       // Disable sprites and draw PAUSE once
-                       u8 s;
-                       for (s = 0; s < 32; s++)
-                           VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
-                       HudDrawText(10, 10, "PAUSE", HUD_FONT_COLOR_HI);
+                        // Disable sprites and draw PAUSE once
+                        DisableAllSprites();
+                        HudDrawText(10, 10, "PAUSE", HUD_FONT_COLOR_HI);
                    }
                    else
                    {
@@ -3366,9 +3382,8 @@ void main()
                   u8 s;
                   soundStopAll();
                   // Disable all sprites (ship, enemies, explosions)
-                  for (s = 0; s < 32; s++)
-                      VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
-                  g_GameState = GS_TITLE;
+                   DisableAllSprites();
+                   g_GameState = GS_TITLE;
                   g_TitleMode = TS_MENU;
                   g_TitleDirty = 1;
                   g_TitlePhase = 0;
@@ -3584,13 +3599,11 @@ void main()
                   // Batch write all 32 sprites to VRAM en un sol cop
                   VDP_WriteVRAM(g_SprBuf, g_SpriteAttributeLow, g_SpriteAttributeHigh, 128);
               }
-              else
-              {
-                  // During game over delay, disable all sprites
-                  u8 s;
-                  for (s = 0; s < 32; s++)
-                      VDP_SetSpritePositionY(s, VDP_SPRITE_DISABLE_SM1);
-               }
+               else
+               {
+                   // During game over delay, disable all sprites
+                   DisableAllSprites();
+                }
                // Game over check - DESPRES del renderitzat de sprites (per veure l'explosio)
                if (g_ShipLastLife && !g_ShipExploding)
                {
