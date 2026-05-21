@@ -5,11 +5,15 @@
 // Trampoline code that will be copied to RAM
 // Must be position-independent
 static const u8 g_Trampoline[] = {
-    0x3E, 0x02,          // LD A, 2
-    0x32, 0x00, 0x60,    // LD (0x6000), A   ; Bank 0 -> segment 2
-    0x3E, 0x03,          // LD A, 3
-    0x32, 0xFF, 0x77,    // LD (0x77FF), A   ; Bank 1 -> segment 3
-    0xC3, 0x14, 0x40     // JP 0x4014         ; Jump to game entry point
+    0xF3,              // DI
+    0x3E, 0x02,        // LD A, 2
+    0x32, 0x00, 0x60,  // LD (0x6000), A   ; ASCII16 Page 1 (4000-5FFF) -> seg 2
+    0x32, 0x01, 0x60,  // LD (0x6001), A   ; ASCII16 Page 2 (6000-7FFF) -> seg 2
+    0x3E, 0x03,        // LD A, 3
+    0x32, 0x02, 0x60,  // LD (0x6002), A   ; ASCII16 Page 3 (8000-9FFF) -> seg 3
+    0x32, 0x03, 0x60,  // LD (0x6003), A   ; ASCII16 Page 4 (A000-BFFF) -> seg 3
+    0xFB,              // EI
+    0xC3, 0x14, 0x40   // JP 0x4014         ; Jump to game entry point
 };
 
 //=============================================================================

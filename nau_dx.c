@@ -184,9 +184,21 @@ static void DisableAllSprites()
 // Helper: check if a redefinable key is pressed
 u8 IsKeyPressed(u8 key) { return IS_KEY_PRESSED(Keyboard_Read(key & 0x0F), key); }
 
-// Joystick input helpers (port 1, bits are 0 when pressed)
-#define JOY_DIR()   (~Joystick_Read(JOY_PORT_1) & 0x0F)
-#define JOY_FIRE()  ((Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0)
+// BIOS joystick read via Gtstck (0x00D8) - reliable on all MSX
+static u8 ReadJoy(u8 port) __naked
+{
+__asm
+    ld a, l
+    rst 0x30
+    .dw 0x00D8
+    ld l, a
+    ret
+__endasm;
+}
+
+// Joystick input helpers (Gtstck returns bits 0 when pressed)
+#define JOY_DIR()   (~ReadJoy(JOY_PORT_1) & 0x0F)
+#define JOY_FIRE()  ((ReadJoy(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0)
 
 // Unified input macros - check joystick or keyboard based on g_ControlMode
 #define INPUT_LEFT()   (g_ControlMode ? IsKeyPressed(g_KeyLeft)   : (JOY_DIR() & JOY_INPUT_DIR_LEFT))
@@ -194,7 +206,7 @@ u8 IsKeyPressed(u8 key) { return IS_KEY_PRESSED(Keyboard_Read(key & 0x0F), key);
 #define INPUT_UP()     (g_ControlMode ? IsKeyPressed(g_KeyUp)     : (JOY_DIR() & JOY_INPUT_DIR_UP))
 #define INPUT_DOWN()   (g_ControlMode ? IsKeyPressed(g_KeyDown)   : (JOY_DIR() & JOY_INPUT_DIR_DOWN))
 #define INPUT_FIRE()   (g_ControlMode ? IsKeyPressed(g_KeyFire)   : JOY_FIRE())
-#define INPUT_PAUSE()  (IsKeyPressed(g_KeyPause) || ((Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_B) == 0))
+#define INPUT_PAUSE()  (IsKeyPressed(g_KeyPause) || ((ReadJoy(JOY_PORT_1) & JOY_INPUT_TRIGGER_B) == 0))
 #define INPUT_QUIT()   (IsKeyPressed(g_KeyQuit))
 
 // Hi-scores
@@ -908,7 +920,7 @@ void UpdateHUD()
                 { bhp[boss_count] = g_Enemies[i].health; bmx[boss_count] = g_Enemies[i].boss_hp_max; boss_count++; }
         for (br = 0; br < boss_count; br++)
         {
-            u8 bm = bmx[br] ? bmx[br] : GetBossMaxHP(BossTierFromLevel(g_Level));
+            u8 bm = bmx[br] ? bmx[br] : 25;
             u8 bf = (u8)((u16)bhp[br] * 5u / bm);
             u8 row = (u8)(17 + br * 2);
             u8 *last = (br == 0) ? &last_boss0_filled : &last_boss1_filled;
@@ -1188,8 +1200,8 @@ static void SpawnSingleEnemy(u8 x, u8 y, u8 patt, i8 vx, u8 type)
         g_Enemies[i].boss_vosc = 0;
         if (type == ENEMY_TYPE_BOMBER)
         {
-            g_Enemies[i].fire_cd = (u8)(8u + (Math_GetRandom8() & 7u));
-            g_Enemies[i].pattern = (u8)(Math_GetRandom8() & 1u);
+            g_Enemies[i].fire_cd = (u8)(22u + (i * 5u));
+            g_Enemies[i].pattern = (u8)(i & 1u);
         }
         else
             g_Enemies[i].fire_cd = 0;
@@ -1530,8 +1542,10 @@ static u8 BossTierFromLevel(u8 lv)
 
 static u8 BossBulletVyFromTier(u8 tier)
 {
-    u8 v = (u8)(ENEMYSHOT_SPEED_Y + tier);
-    if (tier >= 3) v++;
+    // Cap bullet speed at tier 2 (level 15) - higher tiers use HP for difficulty
+    u8 t = tier;
+    if (t > 2) t = 2;
+    u8 v = (u8)(ENEMYSHOT_SPEED_Y + t);
     return v;
 }
 
@@ -1570,7 +1584,7 @@ static void BomberFireVolley(u8 i)
             SpawnEnemyBullet((u8)(bx + 1u), by, 0, (u8)(ENEMYSHOT_SPEED_Y + 1u), ENEMYSHOT_TYPE_BOMB);
     }
     g_Enemies[i].pattern ^= 1u;
-    g_Enemies[i].fire_cd = (u8)(13u + (Math_GetRandom8() & 7u));
+    g_Enemies[i].fire_cd = 28;
 }
 
 static u8 BossTryAimedShot(u8 dual_mode, u8 x, u8 y, i8 vx, u8 vy)
@@ -2237,18 +2251,6 @@ void InitHiScores()
     g_HiScores[2].name[0]='C'; g_HiScores[2].name[1]='M'; g_HiScores[2].name[2]='T';
 }
 
-// 1:1 CPC: hs_isTop - retorna posicio (0-2) o 255 si no entra
-u8 HsIsTop(u16 score, u8 level)
-{
-    u8 i;
-    for (i = 0; i < HISCORE_COUNT; i++)
-    {
-        if (score > g_HiScores[i].score) return i;
-        if (score == g_HiScores[i].score && level > g_HiScores[i].level) return i;
-    }
-    return 255;
-}
-
 // 1:1 CPC: hs_insert
 void HsInsert(u8 pos, u16 score, u8 level, u8* name)
 {
@@ -2851,8 +2853,8 @@ void UpdateMenuInput()
     u8 row8 = Keyboard_Read(8);
     u8 row5 = Keyboard_Read(5);
     u8 row0 = Keyboard_Read(0); // tecles 1, 2, 3
-    u8 joy = ~Joystick_Read(JOY_PORT_1) & 0x0F;
-    u8 joy_fire = (Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0;
+    u8 joy = ~ReadJoy(JOY_PORT_1) & 0x0F;
+    u8 joy_fire = (ReadJoy(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0;
     u8 kbd_fire = IS_KEY_PRESSED(row8, KEY_SPACE) || IS_KEY_PRESSED(row5, KEY_Z);
     u8 fire  = g_ControlMode ? kbd_fire : joy_fire;  // Only check input matching selected mode
 
@@ -2940,9 +2942,15 @@ void UpdateMenuInput()
      }
     else if (g_TitleMode == TS_WIN)
     {
-        if (fire)
+        // Phase 0 = wait for fire release (avoid immediate transition if button held)
+        // Phase 1 = allow fire to transition to hiscore
+        if (g_TitlePhase == 0)
         {
-            g_TitleMode = TS_HISCORE_VIEW;
+            if (!fire) g_TitlePhase = 1;
+        }
+        else if (fire)
+        {
+            g_TitleMode = TS_HISCORE_INPUT;
             g_TitleDirty = 1; g_TitlePhase = 0;
         }
     }
@@ -3154,21 +3162,13 @@ DisableAllSprites();
     }
     else
     {
-        g_HsPos = HsIsTop(g_Score, g_Level);
-        if (g_Score > 0 && g_HsPos < HISCORE_COUNT)
-        {
-             g_HsInputPos    = 0;
-             g_HsInputChar[0] = ' ';
-             g_HsInputChar[1] = ' ';
-             g_HsInputChar[2] = ' ';
-             g_TitleMode = TS_HISCORE_INPUT;
-             g_TitleDirty = 1;
-         }
-         else
-         {
-             g_TitleMode = TS_HISCORE_VIEW;
-             g_TitleDirty = 1;
-        }
+        g_HsPos = 0;
+        g_HsInputPos    = 0;
+        g_HsInputChar[0] = ' ';
+        g_HsInputChar[1] = ' ';
+        g_HsInputChar[2] = ' ';
+        g_TitleMode = TS_HISCORE_INPUT;
+        g_TitleDirty = 1;
     }
     g_GameState  = GS_TITLE;
     g_TitleDirty = 1;
@@ -3445,8 +3445,8 @@ void main()
              if (g_GameState == GS_PLAYING)
                  UpdateHUD();
 
-               // Draw sprites (but not during game over delay)
-               if (g_GameOverDelay == 0)
+               // Draw sprites (but not during game over delay or after state change)
+                if (g_GameOverDelay == 0 && g_GameState == GS_PLAYING)
                {
   				spr = 0;
 
