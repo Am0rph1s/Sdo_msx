@@ -50,13 +50,13 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
-"C:\MSXgl\tools\sdcc\bin\sdcc" -mz80 --no-std-crt0 --code-loc 0xC000 --data-loc 0xD000 loader.rel -o loader.ihx >nul 2>&1
+"C:\MSXgl\tools\sdcc\bin\sdcc" -mz80 --no-std-crt0 --code-loc 0x8000 --data-loc 0xD000 loader.rel -o loader.ihx >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: Loader linking failed!
     pause
     exit /b 1
 )
-"C:\MSXgl\tools\MSXtk\bin\MSXhex" loader.ihx -e bin -s 0xC000 -o loader.bin >nul 2>&1
+"C:\MSXgl\tools\MSXtk\bin\MSXhex" loader.ihx -e bin -s 0x8000 -o loader.bin >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: Loader conversion failed!
     pause
@@ -66,7 +66,10 @@ echo     Loader compiled.
 
 echo.
 echo [5/5] Creating Tape Binary...
-copy /b loader.bin + game_compressed.bin %OUT_DIR%\nau_dx_tape_loader.bin >nul 2>&1
+:: Create magic marker
+echo -ne '\xDE\xAD\xBE\xEF' > "%TAPE_DIR%\magic.bin"
+:: Concatenate Loader + Magic + Compressed Data
+copy /b loader.bin + magic.bin + game_compressed.bin %OUT_DIR%\nau_dx_tape_loader.bin >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: Binary concatenation failed!
     pause
@@ -76,9 +79,9 @@ echo     Tape binary created: %OUT_DIR%\nau_dx_tape_loader.bin
 
 echo.
 echo [6/6] Converting to CAS...
-py "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0xC000 0xC000
+py "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0x8000 0x8000
 if !errorlevel! neq 0 (
-    python "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0xC000 0xC000
+    python "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0x8000 0x8000
     if !errorlevel! neq 0 (
         echo ERROR: CAS conversion failed!
         pause
@@ -88,22 +91,9 @@ if !errorlevel! neq 0 (
 echo     CAS file created: %TAPE_DIR%\nau_dx_tape.cas
 
 echo.
-echo [7/7] Converting to WAV...
-py "%TAPE_DIR%\cas2wav.py" "%TAPE_DIR%\nau_dx_tape.cas" "%TAPE_DIR%\nau_dx_tape.wav"
-if !errorlevel! neq 0 (
-    python "%TAPE_DIR%\cas2wav.py" "%TAPE_DIR%\nau_dx_tape.cas" "%TAPE_DIR%\nau_dx_tape.wav"
-    if !errorlevel! neq 0 (
-        echo ERROR: WAV conversion failed!
-        pause
-        exit /b 1
-    )
-)
-echo     WAV file created: %TAPE_DIR%\nau_dx_tape.wav
-
-echo.
 echo ========================================
 echo   Tape build complete!
-echo   Output: %TAPE_DIR%\nau_dx_tape.wav
-echo   Load with: BLOAD"CAS:",R (play WAV on MSX)
+echo   Output: %TAPE_DIR%\nau_dx_tape.cas
+echo   Load with: BLOAD"CAS:",R
 echo ========================================
 pause

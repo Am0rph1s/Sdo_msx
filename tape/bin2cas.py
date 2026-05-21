@@ -16,8 +16,8 @@ def create_cas(input_bin, output_cas, filename, load_addr, exec_addr):
     # Add header sequence
     cas_data.extend(HEADER_SEQ)
     
-    # File type: 0xD0 = Binary
-    cas_data.append(0xD0)
+    # File type: 10 bytes of 0xD0 for Binary files
+    cas_data.extend(b'\xD0' * 10)
     
     # Filename (6 bytes, padded with spaces)
     fname_bytes = filename.encode('ascii').ljust(6, b' ')[:6]
@@ -27,7 +27,8 @@ def create_cas(input_bin, output_cas, filename, load_addr, exec_addr):
     cas_data.extend(struct.pack('<H', load_addr))
     
     # Ending address (2 bytes, little-endian)
-    end_addr = load_addr + file_size - 1
+    # Note: If file size causes wrap around 64K, we just use the wrapped value
+    end_addr = (load_addr + file_size - 1) & 0xFFFF
     cas_data.extend(struct.pack('<H', end_addr))
     
     # Execution address (2 bytes, little-endian)
