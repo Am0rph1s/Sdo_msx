@@ -18,7 +18,7 @@ Area                                    Addr        Size        Decimal Bytes (A
      00000000  l__INITIALIZER                  
      00000000  s__CABS                         
      00000000  s__DABS                         
-     000000E8  l__CODE                         
+     000000F7  l__CODE                         
      00008000  s__CODE                         
      0000D000  s__DATA                         
      0000D000  s__GSFINAL                      
@@ -32,7 +32,7 @@ Hexadecimal  [32-Bits]
 
 Area                                    Addr        Size        Decimal Bytes (Attributes)
 --------------------------------        ----        ----        ------- ----- ------------
-_CODE                               00008000    000000E8 =         232. bytes (REL,CON)
+_CODE                               00008000    000000F7 =         247. bytes (REL,CON)
 
       Value  Global                              Global Defined In Module
       -----  --------------------------------   ------------------------

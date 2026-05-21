@@ -145,30 +145,36 @@ _rle_decompress::
 	pop	hl
 	pop	af
 	jp	(hl)
-;loader.c:30: void main(void) __naked {
+;loader.c:30: void main(void) {
 ;	---------------------------------
 ; Function main
 ; ---------------------------------
 _main::
-;loader.c:35: __endasm;
+	push	ix
+	ld	ix,#0
+	add	ix,sp
+	push	af
+;loader.c:42: __endasm;
 	di
 	im	1
 	ld	sp, #0xD000
-;loader.c:40: uint8_t *ptr = (uint8_t *)0x8000;
+;	Change border to RED (color 4) to indicate loader is running
+	ld	a, #7
+	out	(#0x99), a
+	ld	a, #4
+	out	(#0x99), a
+;loader.c:46: uint8_t *ptr = (uint8_t *)0x8000;
 	ld	bc, #0x8000
-;loader.c:41: uint8_t *data_start = 0;
-	xor	a, a
-	ld	-2 (ix), a
-	ld	-1 (ix), a
-;loader.c:44: while (ptr < (uint8_t *)0xFFFF) {
+;loader.c:47: uint8_t *data_start = 0;
+	ld	hl, #0x0000
+	ex	(sp), hl
+;loader.c:50: while (ptr < (uint8_t *)0xF000) {
 	ld	de, #0x8000
 00106$:
-	ld	a, e
-	sub	a, #0xff
 	ld	a, d
-	sbc	a, #0xff
+	sub	a, #0xf0
 	jr	NC, 00108$
-;loader.c:45: if (ptr[0] == MAGIC_1 && ptr[1] == MAGIC_2 && 
+;loader.c:51: if (ptr[0] == MAGIC_1 && ptr[1] == MAGIC_2 && 
 	ld	a, (de)
 	push	de
 	pop	iy
@@ -178,7 +184,7 @@ _main::
 	ld	a, 0 (iy)
 	sub	a, #0xad
 	jr	NZ, 00102$
-;loader.c:46: ptr[2] == MAGIC_3 && ptr[3] == MAGIC_4) {
+;loader.c:52: ptr[2] == MAGIC_3 && ptr[3] == MAGIC_4) {
 	ld	l, e
 ;	spillPairReg hl
 ;	spillPairReg hl
@@ -195,35 +201,41 @@ _main::
 	ld	a, (hl)
 	sub	a, #0xef
 	jr	NZ, 00102$
-;loader.c:47: data_start = ptr + 4;
+;loader.c:53: data_start = ptr + 4;
 	ld	hl, #0x0004
 	add	hl, bc
-	ld	-2 (ix), l
-	ld	-1 (ix), h
-;loader.c:48: break;
+	ex	(sp), hl
+;loader.c:54: break;
 	jp	00108$
 00102$:
-;loader.c:50: ptr++;
+;loader.c:56: ptr++;
 	push	iy
 	pop	de
 	push	iy
 	pop	bc
 	jp	00106$
 00108$:
-;loader.c:53: if (data_start) {
+;loader.c:59: if (data_start) {
 	ld	a, -1 (ix)
 	or	a, -2 (ix)
 	jp	Z,0x4000
-;loader.c:56: rle_decompress(data_start, (uint8_t *)0x4000, 0x7D3A);
+;loader.c:61: rle_decompress(data_start, (uint8_t *)0x4000, 0x7D3A);
 	ld	hl, #0x7d3a
 	push	hl
 	ld	de, #0x4000
-	pop	hl
-	push	hl
+	ld	l, -2 (ix)
+;	spillPairReg hl
+;	spillPairReg hl
+	ld	h, -1 (ix)
+;	spillPairReg hl
+;	spillPairReg hl
 	call	_rle_decompress
-;loader.c:62: __endasm;
+;loader.c:67: __endasm;
 	jp	0x4000
-;loader.c:63: }
+;loader.c:68: }
+	ld	sp, ix
+	pop	ix
+	ret
 	.area _CODE
 	.area _INITIALIZER
 	.area _CABS (ABS)

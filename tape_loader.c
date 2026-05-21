@@ -27,21 +27,27 @@ void rle_decompress(uint8_t *src, uint8_t *dest, uint16_t size) {
     }
 }
 
-void main(void) __naked {
+void main(void) {
+    // Setup stack and interrupts
     __asm
     di
     im 1
     ld sp, #0xD000
+    
+    ; Change border to RED (color 4) to indicate loader is running
+    ld a, #7
+    out (#0x99), a
+    ld a, #4
+    out (#0x99), a
     __endasm;
 
     // Find magic number in memory
     // The entire file (loader + magic + data) is loaded at 0x8000.
-    // We start searching from 0x8000.
     uint8_t *ptr = (uint8_t *)0x8000;
     uint8_t *data_start = 0;
     
-    // Scan up to 32KB
-    while (ptr < (uint8_t *)0xFFFF) {
+    // Scan up to 0xF000 to avoid reading invalid memory
+    while (ptr < (uint8_t *)0xF000) {
         if (ptr[0] == MAGIC_1 && ptr[1] == MAGIC_2 && 
             ptr[2] == MAGIC_3 && ptr[3] == MAGIC_4) {
             data_start = ptr + 4;
@@ -52,7 +58,6 @@ void main(void) __naked {
 
     if (data_start) {
         // Decompress data to 0x4000
-        // Size is approx 32KB (0x7D3A bytes)
         rle_decompress(data_start, (uint8_t *)0x4000, 0x7D3A);
     }
 

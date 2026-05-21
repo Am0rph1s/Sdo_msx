@@ -41,35 +41,31 @@ if %errorlevel% neq 0 (
 echo     Game compressed.
 
 echo.
-echo [4/5] Compiling Loader...
-cd /d %TAPE_DIR%
-del /q loader.rel loader.ihx loader.bin loader.asm loader.lst loader.sym loader.lk >nul 2>&1
-"C:\MSXgl\tools\sdcc\bin\sdcc" -c -mz80 --opt-code-speed loader.c -o loader.rel >nul 2>&1
+echo [4/5] Building Tape Loader with MSXgl...
+cd /d %PROJECT_DIR%
+copy /y project_config_tape.js project_config.js >nul
+copy /y tape\tape_loader.c tape_loader.c >nul
+call build.bat >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: Loader compilation failed!
+    echo ERROR: Tape loader build failed!
     pause
     exit /b 1
 )
-"C:\MSXgl\tools\sdcc\bin\sdcc" -mz80 --no-std-crt0 --code-loc 0x8000 --data-loc 0xD000 loader.rel -o loader.ihx >nul 2>&1
-if %errorlevel% neq 0 (
-    echo ERROR: Loader linking failed!
-    pause
-    exit /b 1
+:: MSXgl BIN_TAPE outputs a .bin file
+if exist %OUT_DIR%\nau_dx_tape.bin (
+    copy /y %OUT_DIR%\nau_dx_tape.bin %TAPE_DIR%\loader.bin >nul 2>&1
+) else if exist %OUT_DIR%\nau_dx_tape.rom (
+    :: Fallback if it outputs .rom
+    copy /y %OUT_DIR%\nau_dx_tape.rom %TAPE_DIR%\loader.bin >nul 2>&1
 )
-"C:\MSXgl\tools\MSXtk\bin\MSXhex" loader.ihx -e bin -s 0x8000 -o loader.bin >nul 2>&1
-if %errorlevel% neq 0 (
-    echo ERROR: Loader conversion failed!
-    pause
-    exit /b 1
-)
-echo     Loader compiled.
+echo     Tape loader built successfully.
 
 echo.
 echo [5/5] Creating CAS (Single Block)...
-:: Create magic marker
-echo -ne '\xDE\xAD\xBE\xEF' > "%TAPE_DIR%\magic.bin"
+:: Create magic marker using Python
+py -c "import sys; sys.stdout.buffer.write(b'\xDE\xAD\xBE\xEF')" > "%TAPE_DIR%\magic.bin"
 :: Concatenate Loader + Magic + Compressed Data into ONE file
-copy /b loader.bin + magic.bin + game_compressed.bin %OUT_DIR%\nau_dx_tape_loader.bin >nul 2>&1
+copy /b "%TAPE_DIR%\loader.bin" + "%TAPE_DIR%\magic.bin" + "%TAPE_DIR%\game_compressed.bin" "%OUT_DIR%\nau_dx_tape_loader.bin" >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: Binary concatenation failed!
     pause

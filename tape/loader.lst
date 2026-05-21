@@ -145,85 +145,97 @@
     00000079 E1               [10]  145 	pop	hl
     0000007A F1               [10]  146 	pop	af
     0000007B E9               [ 4]  147 	jp	(hl)
-                                    148 ;loader.c:30: void main(void) __naked {
+                                    148 ;loader.c:30: void main(void) {
                                     149 ;	---------------------------------
                                     150 ; Function main
                                     151 ; ---------------------------------
     0000007C                        152 _main::
-                                    153 ;loader.c:35: __endasm;
-    0000007C F3               [ 4]  154 	di
-    0000007D ED 56            [ 8]  155 	im	1
-    0000007F 31 00 D0         [10]  156 	ld	sp, #0xD000
-                                    157 ;loader.c:40: uint8_t *ptr = (uint8_t *)0x8000;
-    00000082 01 00 80         [10]  158 	ld	bc, #0x8000
-                                    159 ;loader.c:41: uint8_t *data_start = 0;
-    00000085 AF               [ 4]  160 	xor	a, a
-    00000086 DD 77 FE         [19]  161 	ld	-2 (ix), a
-    00000089 DD 77 FF         [19]  162 	ld	-1 (ix), a
-                                    163 ;loader.c:44: while (ptr < (uint8_t *)0xFFFF) {
-    0000008C 11 00 80         [10]  164 	ld	de, #0x8000
-    0000008F                        165 00106$:
-    0000008F 7B               [ 4]  166 	ld	a, e
-    00000090 D6 FF            [ 7]  167 	sub	a, #0xff
-    00000092 7A               [ 4]  168 	ld	a, d
-    00000093 DE FF            [ 7]  169 	sbc	a, #0xff
-    00000095 30 39            [12]  170 	jr	NC, 00108$
-                                    171 ;loader.c:45: if (ptr[0] == MAGIC_1 && ptr[1] == MAGIC_2 && 
-    00000097 1A               [ 7]  172 	ld	a, (de)
-    00000098 D5               [11]  173 	push	de
-    00000099 FD E1            [14]  174 	pop	iy
-    0000009B FD 23            [10]  175 	inc	iy
-    0000009D D6 DE            [ 7]  176 	sub	a, #0xde
-    0000009F 20 26            [12]  177 	jr	NZ, 00102$
-    000000A1 FD 7E 00         [19]  178 	ld	a, 0 (iy)
-    000000A4 D6 AD            [ 7]  179 	sub	a, #0xad
-    000000A6 20 1F            [12]  180 	jr	NZ, 00102$
-                                    181 ;loader.c:46: ptr[2] == MAGIC_3 && ptr[3] == MAGIC_4) {
-    000000A8 6B               [ 4]  182 	ld	l, e
-                                    183 ;	spillPairReg hl
-                                    184 ;	spillPairReg hl
-    000000A9 62               [ 4]  185 	ld	h, d
-                                    186 ;	spillPairReg hl
-                                    187 ;	spillPairReg hl
-    000000AA 23               [ 6]  188 	inc	hl
-    000000AB 23               [ 6]  189 	inc	hl
-    000000AC 7E               [ 7]  190 	ld	a, (hl)
-    000000AD D6 BE            [ 7]  191 	sub	a, #0xbe
-    000000AF 20 16            [12]  192 	jr	NZ, 00102$
-    000000B1 21 03 00         [10]  193 	ld	hl, #3
-    000000B4 19               [11]  194 	add	hl, de
-    000000B5 7E               [ 7]  195 	ld	a, (hl)
-    000000B6 D6 EF            [ 7]  196 	sub	a, #0xef
-    000000B8 20 0D            [12]  197 	jr	NZ, 00102$
-                                    198 ;loader.c:47: data_start = ptr + 4;
-    000000BA 21 04 00         [10]  199 	ld	hl, #0x0004
-    000000BD 09               [11]  200 	add	hl, bc
-    000000BE DD 75 FE         [19]  201 	ld	-2 (ix), l
-    000000C1 DD 74 FF         [19]  202 	ld	-1 (ix), h
-                                    203 ;loader.c:48: break;
-    000000C4 C3rD0r00         [10]  204 	jp	00108$
-    000000C7                        205 00102$:
-                                    206 ;loader.c:50: ptr++;
-    000000C7 FD E5            [15]  207 	push	iy
-    000000C9 D1               [10]  208 	pop	de
-    000000CA FD E5            [15]  209 	push	iy
-    000000CC C1               [10]  210 	pop	bc
-    000000CD C3r8Fr00         [10]  211 	jp	00106$
-    000000D0                        212 00108$:
-                                    213 ;loader.c:53: if (data_start) {
-    000000D0 DD 7E FF         [19]  214 	ld	a, -1 (ix)
-    000000D3 DD B6 FE         [19]  215 	or	a, -2 (ix)
-    000000D6 CA 00 40         [10]  216 	jp	Z,0x4000
-                                    217 ;loader.c:56: rle_decompress(data_start, (uint8_t *)0x4000, 0x7D3A);
-    000000D9 21 3A 7D         [10]  218 	ld	hl, #0x7d3a
-    000000DC E5               [11]  219 	push	hl
-    000000DD 11 00 40         [10]  220 	ld	de, #0x4000
-    000000E0 E1               [10]  221 	pop	hl
-    000000E1 E5               [11]  222 	push	hl
-    000000E2 CDr00r00         [17]  223 	call	_rle_decompress
-                                    224 ;loader.c:62: __endasm;
-    000000E5 C3 00 40         [10]  225 	jp	0x4000
-                                    226 ;loader.c:63: }
-                                    227 	.area _CODE
-                                    228 	.area _INITIALIZER
-                                    229 	.area _CABS (ABS)
+    0000007C DD E5            [15]  153 	push	ix
+    0000007E DD 21 00 00      [14]  154 	ld	ix,#0
+    00000082 DD 39            [15]  155 	add	ix,sp
+    00000084 F5               [11]  156 	push	af
+                                    157 ;loader.c:42: __endasm;
+    00000085 F3               [ 4]  158 	di
+    00000086 ED 56            [ 8]  159 	im	1
+    00000088 31 00 D0         [10]  160 	ld	sp, #0xD000
+                                    161 ;	Change border to RED (color 4) to indicate loader is running
+    0000008B 3E 07            [ 7]  162 	ld	a, #7
+    0000008D D3 99            [11]  163 	out	(#0x99), a
+    0000008F 3E 04            [ 7]  164 	ld	a, #4
+    00000091 D3 99            [11]  165 	out	(#0x99), a
+                                    166 ;loader.c:46: uint8_t *ptr = (uint8_t *)0x8000;
+    00000093 01 00 80         [10]  167 	ld	bc, #0x8000
+                                    168 ;loader.c:47: uint8_t *data_start = 0;
+    00000096 21 00 00         [10]  169 	ld	hl, #0x0000
+    00000099 E3               [19]  170 	ex	(sp), hl
+                                    171 ;loader.c:50: while (ptr < (uint8_t *)0xF000) {
+    0000009A 11 00 80         [10]  172 	ld	de, #0x8000
+    0000009D                        173 00106$:
+    0000009D 7A               [ 4]  174 	ld	a, d
+    0000009E D6 F0            [ 7]  175 	sub	a, #0xf0
+    000000A0 30 34            [12]  176 	jr	NC, 00108$
+                                    177 ;loader.c:51: if (ptr[0] == MAGIC_1 && ptr[1] == MAGIC_2 && 
+    000000A2 1A               [ 7]  178 	ld	a, (de)
+    000000A3 D5               [11]  179 	push	de
+    000000A4 FD E1            [14]  180 	pop	iy
+    000000A6 FD 23            [10]  181 	inc	iy
+    000000A8 D6 DE            [ 7]  182 	sub	a, #0xde
+    000000AA 20 21            [12]  183 	jr	NZ, 00102$
+    000000AC FD 7E 00         [19]  184 	ld	a, 0 (iy)
+    000000AF D6 AD            [ 7]  185 	sub	a, #0xad
+    000000B1 20 1A            [12]  186 	jr	NZ, 00102$
+                                    187 ;loader.c:52: ptr[2] == MAGIC_3 && ptr[3] == MAGIC_4) {
+    000000B3 6B               [ 4]  188 	ld	l, e
+                                    189 ;	spillPairReg hl
+                                    190 ;	spillPairReg hl
+    000000B4 62               [ 4]  191 	ld	h, d
+                                    192 ;	spillPairReg hl
+                                    193 ;	spillPairReg hl
+    000000B5 23               [ 6]  194 	inc	hl
+    000000B6 23               [ 6]  195 	inc	hl
+    000000B7 7E               [ 7]  196 	ld	a, (hl)
+    000000B8 D6 BE            [ 7]  197 	sub	a, #0xbe
+    000000BA 20 11            [12]  198 	jr	NZ, 00102$
+    000000BC 21 03 00         [10]  199 	ld	hl, #3
+    000000BF 19               [11]  200 	add	hl, de
+    000000C0 7E               [ 7]  201 	ld	a, (hl)
+    000000C1 D6 EF            [ 7]  202 	sub	a, #0xef
+    000000C3 20 08            [12]  203 	jr	NZ, 00102$
+                                    204 ;loader.c:53: data_start = ptr + 4;
+    000000C5 21 04 00         [10]  205 	ld	hl, #0x0004
+    000000C8 09               [11]  206 	add	hl, bc
+    000000C9 E3               [19]  207 	ex	(sp), hl
+                                    208 ;loader.c:54: break;
+    000000CA C3rD6r00         [10]  209 	jp	00108$
+    000000CD                        210 00102$:
+                                    211 ;loader.c:56: ptr++;
+    000000CD FD E5            [15]  212 	push	iy
+    000000CF D1               [10]  213 	pop	de
+    000000D0 FD E5            [15]  214 	push	iy
+    000000D2 C1               [10]  215 	pop	bc
+    000000D3 C3r9Dr00         [10]  216 	jp	00106$
+    000000D6                        217 00108$:
+                                    218 ;loader.c:59: if (data_start) {
+    000000D6 DD 7E FF         [19]  219 	ld	a, -1 (ix)
+    000000D9 DD B6 FE         [19]  220 	or	a, -2 (ix)
+    000000DC CA 00 40         [10]  221 	jp	Z,0x4000
+                                    222 ;loader.c:61: rle_decompress(data_start, (uint8_t *)0x4000, 0x7D3A);
+    000000DF 21 3A 7D         [10]  223 	ld	hl, #0x7d3a
+    000000E2 E5               [11]  224 	push	hl
+    000000E3 11 00 40         [10]  225 	ld	de, #0x4000
+    000000E6 DD 6E FE         [19]  226 	ld	l, -2 (ix)
+                                    227 ;	spillPairReg hl
+                                    228 ;	spillPairReg hl
+    000000E9 DD 66 FF         [19]  229 	ld	h, -1 (ix)
+                                    230 ;	spillPairReg hl
+                                    231 ;	spillPairReg hl
+    000000EC CDr00r00         [17]  232 	call	_rle_decompress
+                                    233 ;loader.c:67: __endasm;
+    000000EF C3 00 40         [10]  234 	jp	0x4000
+                                    235 ;loader.c:68: }
+    000000F2 DD F9            [10]  236 	ld	sp, ix
+    000000F4 DD E1            [14]  237 	pop	ix
+    000000F6 C9               [10]  238 	ret
+                                    239 	.area _CODE
+                                    240 	.area _INITIALIZER
+                                    241 	.area _CABS (ABS)
