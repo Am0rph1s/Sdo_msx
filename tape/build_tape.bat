@@ -88,9 +88,22 @@ if !errorlevel! neq 0 (
 echo     CAS file created: %TAPE_DIR%\nau_dx_tape.cas
 
 echo.
+echo [7/7] Converting to WAV...
+py "%TAPE_DIR%\cas2wav.py" "%TAPE_DIR%\nau_dx_tape.cas" "%TAPE_DIR%\nau_dx_tape.wav"
+if !errorlevel! neq 0 (
+    python "%TAPE_DIR%\cas2wav.py" "%TAPE_DIR%\nau_dx_tape.cas" "%TAPE_DIR%\nau_dx_tape.wav"
+    if !errorlevel! neq 0 (
+        echo ERROR: WAV conversion failed!
+        pause
+        exit /b 1
+    )
+)
+echo     WAV file created: %TAPE_DIR%\nau_dx_tape.wav
+
+echo.
 echo ========================================
 echo   Tape build complete!
-echo   Output: %TAPE_DIR%\nau_dx_tape.cas
-echo   Load with: BLOAD"CAS:",R
+echo   Output: %TAPE_DIR%\nau_dx_tape.wav
+echo   Load with: BLOAD"CAS:",R (play WAV on MSX)
 echo ========================================
 pause
