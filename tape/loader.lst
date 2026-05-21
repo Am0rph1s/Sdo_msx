@@ -1,0 +1,168 @@
+                                      1 ;--------------------------------------------------------
+                                      2 ; File Created by SDCC : free open source ANSI-C Compiler
+                                      3 ; Version 4.2.0 #13081 (MINGW64)
+                                      4 ;--------------------------------------------------------
+                                      5 	.module loader
+                                      6 	.optsdcc -mz80
+                                      7 	
+                                      8 ;--------------------------------------------------------
+                                      9 ; Public variables in this module
+                                     10 ;--------------------------------------------------------
+                                     11 	.globl _main
+                                     12 	.globl _rle_decompress
+                                     13 ;--------------------------------------------------------
+                                     14 ; special function registers
+                                     15 ;--------------------------------------------------------
+                                     16 ;--------------------------------------------------------
+                                     17 ; ram data
+                                     18 ;--------------------------------------------------------
+                                     19 	.area _DATA
+                                     20 ;--------------------------------------------------------
+                                     21 ; ram data
+                                     22 ;--------------------------------------------------------
+                                     23 	.area _INITIALIZED
+                                     24 ;--------------------------------------------------------
+                                     25 ; absolute external ram data
+                                     26 ;--------------------------------------------------------
+                                     27 	.area _DABS (ABS)
+                                     28 ;--------------------------------------------------------
+                                     29 ; global & static initialisations
+                                     30 ;--------------------------------------------------------
+                                     31 	.area _HOME
+                                     32 	.area _GSINIT
+                                     33 	.area _GSFINAL
+                                     34 	.area _GSINIT
+                                     35 ;--------------------------------------------------------
+                                     36 ; Home
+                                     37 ;--------------------------------------------------------
+                                     38 	.area _HOME
+                                     39 	.area _HOME
+                                     40 ;--------------------------------------------------------
+                                     41 ; code
+                                     42 ;--------------------------------------------------------
+                                     43 	.area _CODE
+                                     44 ;loader.c:11: void rle_decompress(uint8_t *src, uint8_t *dest, uint16_t size) {
+                                     45 ;	---------------------------------
+                                     46 ; Function rle_decompress
+                                     47 ; ---------------------------------
+    00000000                         48 _rle_decompress::
+    00000000 DD E5            [15]   49 	push	ix
+    00000002 DD 21 00 00      [14]   50 	ld	ix,#0
+    00000006 DD 39            [15]   51 	add	ix,sp
+    00000008 F5               [11]   52 	push	af
+    00000009 F5               [11]   53 	push	af
+    0000000A 3B               [ 6]   54 	dec	sp
+    0000000B DD 75 FD         [19]   55 	ld	-3 (ix), l
+    0000000E DD 74 FE         [19]   56 	ld	-2 (ix), h
+                                     57 ;loader.c:12: uint16_t i = 0;
+    00000011 01 00 00         [10]   58 	ld	bc, #0x0000
+                                     59 ;loader.c:13: while (i < size) {
+    00000014                         60 00107$:
+    00000014 79               [ 4]   61 	ld	a, c
+    00000015 DD 96 04         [19]   62 	sub	a, 4 (ix)
+    00000018 78               [ 4]   63 	ld	a, b
+    00000019 DD 9E 05         [19]   64 	sbc	a, 5 (ix)
+    0000001C 30 57            [12]   65 	jr	NC, 00110$
+                                     66 ;loader.c:14: uint8_t byte = src[i++];
+    0000001E 79               [ 4]   67 	ld	a, c
+    0000001F 60               [ 4]   68 	ld	h, b
+                                     69 ;	spillPairReg hl
+                                     70 ;	spillPairReg hl
+    00000020 03               [ 6]   71 	inc	bc
+    00000021 DD 86 FD         [19]   72 	add	a, -3 (ix)
+    00000024 6F               [ 4]   73 	ld	l, a
+                                     74 ;	spillPairReg hl
+                                     75 ;	spillPairReg hl
+    00000025 7C               [ 4]   76 	ld	a, h
+    00000026 DD 8E FE         [19]   77 	adc	a, -2 (ix)
+    00000029 67               [ 4]   78 	ld	h, a
+    0000002A 7E               [ 7]   79 	ld	a, (hl)
+                                     80 ;loader.c:15: if (byte == 0xC0) {
+    0000002B DD 77 FF         [19]   81 	ld	-1 (ix), a
+    0000002E D6 C0            [ 7]   82 	sub	a, #0xc0
+    00000030 20 3B            [12]   83 	jr	NZ, 00105$
+                                     84 ;loader.c:16: uint8_t val = src[i++];
+    00000032 79               [ 4]   85 	ld	a, c
+    00000033 60               [ 4]   86 	ld	h, b
+                                     87 ;	spillPairReg hl
+                                     88 ;	spillPairReg hl
+    00000034 03               [ 6]   89 	inc	bc
+    00000035 DD 86 FD         [19]   90 	add	a, -3 (ix)
+    00000038 6F               [ 4]   91 	ld	l, a
+                                     92 ;	spillPairReg hl
+                                     93 ;	spillPairReg hl
+    00000039 7C               [ 4]   94 	ld	a, h
+    0000003A DD 8E FE         [19]   95 	adc	a, -2 (ix)
+    0000003D 67               [ 4]   96 	ld	h, a
+    0000003E 7E               [ 7]   97 	ld	a, (hl)
+    0000003F DD 77 FB         [19]   98 	ld	-5 (ix), a
+                                     99 ;loader.c:17: uint8_t count = src[i++];
+    00000042 79               [ 4]  100 	ld	a, c
+    00000043 60               [ 4]  101 	ld	h, b
+                                    102 ;	spillPairReg hl
+                                    103 ;	spillPairReg hl
+    00000044 03               [ 6]  104 	inc	bc
+    00000045 DD 86 FD         [19]  105 	add	a, -3 (ix)
+    00000048 6F               [ 4]  106 	ld	l, a
+                                    107 ;	spillPairReg hl
+                                    108 ;	spillPairReg hl
+    00000049 7C               [ 4]  109 	ld	a, h
+    0000004A DD 8E FE         [19]  110 	adc	a, -2 (ix)
+    0000004D 67               [ 4]  111 	ld	h, a
+    0000004E 7E               [ 7]  112 	ld	a, (hl)
+    0000004F DD 77 FF         [19]  113 	ld	-1 (ix), a
+                                    114 ;loader.c:18: while (count--) {
+    00000052 6B               [ 4]  115 	ld	l, e
+                                    116 ;	spillPairReg hl
+                                    117 ;	spillPairReg hl
+    00000053 62               [ 4]  118 	ld	h, d
+                                    119 ;	spillPairReg hl
+                                    120 ;	spillPairReg hl
+    00000054                        121 00101$:
+    00000054 DD 7E FF         [19]  122 	ld	a, -1 (ix)
+    00000057 DD 77 FC         [19]  123 	ld	-4 (ix), a
+    0000005A DD 35 FF         [23]  124 	dec	-1 (ix)
+    0000005D DD 7E FC         [19]  125 	ld	a, -4 (ix)
+    00000060 B7               [ 4]  126 	or	a, a
+    00000061 28 B1            [12]  127 	jr	Z, 00107$
+                                    128 ;loader.c:19: *dest++ = val;
+    00000063 DD 7E FB         [19]  129 	ld	a, -5 (ix)
+    00000066 77               [ 7]  130 	ld	(hl), a
+    00000067 23               [ 6]  131 	inc	hl
+    00000068 5D               [ 4]  132 	ld	e, l
+    00000069 54               [ 4]  133 	ld	d, h
+    0000006A C3r54r00         [10]  134 	jp	00101$
+    0000006D                        135 00105$:
+                                    136 ;loader.c:22: *dest++ = byte;
+    0000006D DD 7E FF         [19]  137 	ld	a, -1 (ix)
+    00000070 12               [ 7]  138 	ld	(de), a
+    00000071 13               [ 6]  139 	inc	de
+    00000072 C3r14r00         [10]  140 	jp	00107$
+    00000075                        141 00110$:
+                                    142 ;loader.c:25: }
+    00000075 DD F9            [10]  143 	ld	sp, ix
+    00000077 DD E1            [14]  144 	pop	ix
+    00000079 E1               [10]  145 	pop	hl
+    0000007A F1               [10]  146 	pop	af
+    0000007B E9               [ 4]  147 	jp	(hl)
+                                    148 ;loader.c:27: void main(void) __naked {
+                                    149 ;	---------------------------------
+                                    150 ; Function main
+                                    151 ; ---------------------------------
+    0000007C                        152 _main::
+                                    153 ;loader.c:32: __endasm;
+    0000007C F3               [ 4]  154 	di
+    0000007D ED 56            [ 8]  155 	im	1
+    0000007F 31 00 D0         [10]  156 	ld	sp, #0xD000
+                                    157 ;loader.c:35: rle_decompress((uint8_t *)COMPRESSED_DATA_ADDR, (uint8_t *)0x4000, 0x7D3A); // Size placeholder
+    00000082 21 3A 7D         [10]  158 	ld	hl, #0x7d3a
+    00000085 E5               [11]  159 	push	hl
+    00000086 11 00 40         [10]  160 	ld	de, #0x4000
+    00000089 21 00 C8         [10]  161 	ld	hl, #0xc800
+    0000008C CDr00r00         [17]  162 	call	_rle_decompress
+                                    163 ;loader.c:40: __endasm;
+    0000008F C3 00 40         [10]  164 	jp	0x4000
+                                    165 ;loader.c:41: }
+                                    166 	.area _CODE
+                                    167 	.area _INITIALIZER
+                                    168 	.area _CABS (ABS)
