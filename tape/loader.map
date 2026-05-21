@@ -18,8 +18,8 @@ Area                                    Addr        Size        Decimal Bytes (A
      00000000  l__INITIALIZER                  
      00000000  s__CABS                         
      00000000  s__DABS                         
-     00000092  l__CODE                         
-     0000C000  s__CODE                         
+     000000E8  l__CODE                         
+     00008000  s__CODE                         
      0000D000  s__DATA                         
      0000D000  s__GSFINAL                      
      0000D000  s__GSINIT                       
@@ -32,12 +32,12 @@ Hexadecimal  [32-Bits]
 
 Area                                    Addr        Size        Decimal Bytes (Attributes)
 --------------------------------        ----        ----        ------- ----- ------------
-_CODE                               0000C000    00000092 =         146. bytes (REL,CON)
+_CODE                               00008000    000000E8 =         232. bytes (REL,CON)
 
       Value  Global                              Global Defined In Module
       -----  --------------------------------   ------------------------
-     0000C000  _rle_decompress                    loader
-     0000C07C  _main                              loader
+     00008000  _rle_decompress                    loader
+     0000807C  _main                              loader
 
 ASxxxx Linker V03.00 + NoICE + sdld,  page 3.
 
@@ -49,7 +49,7 @@ loader.rel                                [ loader ]
 
 User Base Address Definitions
 
-_CODE = 0xc000
+_CODE = 0x8000
 _DATA = 0xd000
 
 

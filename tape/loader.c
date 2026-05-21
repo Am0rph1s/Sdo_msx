@@ -4,8 +4,11 @@
 
 #include <stdint.h>
 
-// Data is loaded at 0x8000 by the second CAS block
-#define DATA_ADDR 0x8000
+// Magic number to locate compressed data
+#define MAGIC_1 0xDE
+#define MAGIC_2 0xAD
+#define MAGIC_3 0xBE
+#define MAGIC_4 0xEF
 
 // RLE Decompressor
 void rle_decompress(uint8_t *src, uint8_t *dest, uint16_t size) {
@@ -31,9 +34,27 @@ void main(void) __naked {
     ld sp, #0xD000
     __endasm;
 
-    // Decompress data from 0x8000 to 0x4000
-    // Size is approx 32KB, we use a large value
-    rle_decompress((uint8_t *)DATA_ADDR, (uint8_t *)0x4000, 0x7D3A); // 32058 bytes placeholder
+    // Find magic number in memory
+    // The entire file (loader + magic + data) is loaded at 0x8000.
+    // We start searching from 0x8000.
+    uint8_t *ptr = (uint8_t *)0x8000;
+    uint8_t *data_start = 0;
+    
+    // Scan up to 32KB
+    while (ptr < (uint8_t *)0xFFFF) {
+        if (ptr[0] == MAGIC_1 && ptr[1] == MAGIC_2 && 
+            ptr[2] == MAGIC_3 && ptr[3] == MAGIC_4) {
+            data_start = ptr + 4;
+            break;
+        }
+        ptr++;
+    }
+
+    if (data_start) {
+        // Decompress data to 0x4000
+        // Size is approx 32KB (0x7D3A bytes)
+        rle_decompress(data_start, (uint8_t *)0x4000, 0x7D3A);
+    }
 
     // Jump to game
     __asm

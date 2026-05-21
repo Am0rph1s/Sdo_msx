@@ -1,44 +1,64 @@
 import sys
 import struct
 
-def create_cas_two_blocks(loader_bin, data_bin, output_cas, loader_name, data_name, loader_load, loader_exec, data_load):
-    with open(loader_bin, 'rb') as f:
-        loader_data = f.read()
-    with open(data_bin, 'rb') as f:
-        data_data = f.read()
+def create_cas(input_bin, output_cas, filename, load_addr, exec_addr):
+    with open(input_bin, 'rb') as f:
+        data = f.read()
 
+    file_size = len(data)
+    
+    # MSX CAS Header sequence
     HEADER_SEQ = bytes([0x1F, 0xA6, 0xDE, 0xBA, 0xCC, 0x13, 0x7D, 0x74])
     
-    def make_block(data, name, load_addr, exec_addr):
-        block = bytearray()
-        block.extend(HEADER_SEQ)
-        block.extend(b'\xD0' * 10)
-        block.extend(name.encode('ascii').ljust(6, b' ')[:6])
-        block.extend(struct.pack('<H', load_addr))
-        end_addr = (load_addr + len(data) - 1) & 0xFFFF
-        block.extend(struct.pack('<H', end_addr))
-        block.extend(struct.pack('<H', exec_addr))
-        block.extend(data)
-        padding = (8 - (len(block) % 8)) % 8
-        if padding > 0:
-            block.extend(b'\x00' * padding)
-        return block
-
+    # Create the complete CAS file
     cas_data = bytearray()
-    cas_data.extend(make_block(loader_data, loader_name, loader_load, loader_exec))
-    cas_data.extend(make_block(data_data, data_name, data_load, data_load))
-
+    
+    # Add header sequence
+    cas_data.extend(HEADER_SEQ)
+    
+    # File type: 10 bytes of 0xD0 for Binary files
+    cas_data.extend(b'\xD0' * 10)
+    
+    # Filename (6 bytes, padded with spaces)
+    fname_bytes = filename.encode('ascii').ljust(6, b' ')[:6]
+    cas_data.extend(fname_bytes)
+    
+    # Starting address (2 bytes, little-endian)
+    cas_data.extend(struct.pack('<H', load_addr))
+    
+    # Ending address (2 bytes, little-endian)
+    end_addr = (load_addr + file_size - 1) & 0xFFFF
+    cas_data.extend(struct.pack('<H', end_addr))
+    
+    # Execution address (2 bytes, little-endian)
+    cas_data.extend(struct.pack('<H', exec_addr))
+    
+    # File data
+    cas_data.extend(data)
+    
+    # Ensure total length is multiple of 8 bytes (pad with 0x00 if needed)
+    padding = (8 - (len(cas_data) % 8)) % 8
+    if padding > 0:
+        cas_data.extend(b'\x00' * padding)
+    
     with open(output_cas, 'wb') as f:
         f.write(cas_data)
         
     print(f"CAS file created: {output_cas}")
-    print(f"Loader: {len(loader_data)} bytes at 0x{loader_load:04X}")
-    print(f"Data: {len(data_data)} bytes at 0x{data_load:04X}")
+    print(f"File size: {len(cas_data)} bytes")
+    print(f"Load address: 0x{load_addr:04X}")
+    print(f"End address: 0x{end_addr:04X}")
+    print(f"Exec address: 0x{exec_addr:04X}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 8:
-        print("Usage: bin2cas.py <loader.bin> <data.bin> <output.cas> <loader_name> <data_name> <loader_load> <loader_exec> <data_load>")
+    if len(sys.argv) < 6:
+        print("Usage: bin2cas.py <input.bin> <output.cas> <filename> <load_addr> <exec_addr>")
         sys.exit(1)
         
-    create_cas_two_blocks(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], 
-                          int(sys.argv[6], 0), int(sys.argv[7], 0), int(sys.argv[8], 0))
+    inp = sys.argv[1]
+    out = sys.argv[2]
+    fname = sys.argv[3]
+    load = int(sys.argv[4], 0)
+    exec_addr = int(sys.argv[5], 0)
+    
+    create_cas(inp, out, fname, load, exec_addr)

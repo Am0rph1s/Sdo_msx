@@ -50,13 +50,13 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
-"C:\MSXgl\tools\sdcc\bin\sdcc" -mz80 --no-std-crt0 --code-loc 0xC000 --data-loc 0xD000 loader.rel -o loader.ihx >nul 2>&1
+"C:\MSXgl\tools\sdcc\bin\sdcc" -mz80 --no-std-crt0 --code-loc 0x8000 --data-loc 0xD000 loader.rel -o loader.ihx >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: Loader linking failed!
     pause
     exit /b 1
 )
-"C:\MSXgl\tools\MSXtk\bin\MSXhex" loader.ihx -e bin -s 0xC000 -o loader.bin >nul 2>&1
+"C:\MSXgl\tools\MSXtk\bin\MSXhex" loader.ihx -e bin -s 0x8000 -o loader.bin >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: Loader conversion failed!
     pause
@@ -65,12 +65,25 @@ if %errorlevel% neq 0 (
 echo     Loader compiled.
 
 echo.
-echo [5/5] Creating CAS with two blocks...
-py "%TAPE_DIR%\bin2cas.py" "%TAPE_DIR%\loader.bin" "%TAPE_DIR%\game_compressed.bin" "%TAPE_DIR%\nau_dx_tape.cas" "LOADER" "DATA" 0xC000 0xC000 0x8000
+echo [5/5] Creating CAS (Single Block)...
+:: Create magic marker
+echo -ne '\xDE\xAD\xBE\xEF' > "%TAPE_DIR%\magic.bin"
+:: Concatenate Loader + Magic + Compressed Data into ONE file
+copy /b loader.bin + magic.bin + game_compressed.bin %OUT_DIR%\nau_dx_tape_loader.bin >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ERROR: Binary concatenation failed!
+    pause
+    exit /b 1
+)
+echo     Tape binary created: %OUT_DIR%\nau_dx_tape_loader.bin
+
+echo.
+echo [6/6] Converting to CAS...
+py "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0x8000 0x8000
 if !errorlevel! neq 0 (
-    python "%TAPE_DIR%\bin2cas.py" "%TAPE_DIR%\loader.bin" "%TAPE_DIR%\game_compressed.bin" "%TAPE_DIR%\nau_dx_tape.cas" "LOADER" "DATA" 0xC000 0xC000 0x8000
+    python "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0x8000 0x8000
     if !errorlevel! neq 0 (
-        echo ERROR: CAS creation failed!
+        echo ERROR: CAS conversion failed!
         pause
         exit /b 1
     )
