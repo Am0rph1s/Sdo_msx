@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 echo ========================================
 echo   NAU DX - Tape Version Builder
 echo ========================================
@@ -74,9 +75,22 @@ if %errorlevel% neq 0 (
 echo     Tape binary created: %OUT_DIR%\nau_dx_tape_loader.bin
 
 echo.
+echo [6/6] Converting to CAS...
+py "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0xC000 0xC000
+if !errorlevel! neq 0 (
+    python "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0xC000 0xC000
+    if !errorlevel! neq 0 (
+        echo ERROR: CAS conversion failed!
+        pause
+        exit /b 1
+    )
+)
+echo     CAS file created: %TAPE_DIR%\nau_dx_tape.cas
+
+echo.
 echo ========================================
 echo   Tape build complete!
-echo   Output: %OUT_DIR%\nau_dx_tape_loader.bin
-echo   To convert to CAS: use bin2cas or wav2cas
+echo   Output: %TAPE_DIR%\nau_dx_tape.cas
+echo   Load with: BLOAD"CAS:",R
 echo ========================================
 pause
