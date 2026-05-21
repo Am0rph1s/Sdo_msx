@@ -79,9 +79,9 @@ echo     Tape binary created: %OUT_DIR%\nau_dx_tape_loader.bin
 
 echo.
 echo [6/6] Converting to CAS...
-py "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0x8000 0x8000
+py "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0xC000 0xC000
 if !errorlevel! neq 0 (
-    python "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0x8000 0x8000
+    python "%TAPE_DIR%\bin2cas.py" "%OUT_DIR%\nau_dx_tape_loader.bin" "%TAPE_DIR%\nau_dx_tape.cas" "NAU_DX" 0xC000 0xC000
     if !errorlevel! neq 0 (
         echo ERROR: CAS conversion failed!
         pause
