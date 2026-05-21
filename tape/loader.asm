@@ -41,7 +41,7 @@
 ; code
 ;--------------------------------------------------------
 	.area _CODE
-;loader.c:14: void rle_decompress(uint8_t *src, uint8_t *dest, uint16_t size) {
+;loader.c:11: void rle_decompress(uint8_t *src, uint8_t *dest, uint16_t size) {
 ;	---------------------------------
 ; Function rle_decompress
 ; ---------------------------------
@@ -54,16 +54,16 @@ _rle_decompress::
 	dec	sp
 	ld	-3 (ix), l
 	ld	-2 (ix), h
-;loader.c:15: uint16_t i = 0;
+;loader.c:12: uint16_t i = 0;
 	ld	bc, #0x0000
-;loader.c:16: while (i < size) {
+;loader.c:13: while (i < size) {
 00107$:
 	ld	a, c
 	sub	a, 4 (ix)
 	ld	a, b
 	sbc	a, 5 (ix)
 	jr	NC, 00110$
-;loader.c:17: uint8_t byte = src[i++];
+;loader.c:14: uint8_t byte = src[i++];
 	ld	a, c
 	ld	h, b
 ;	spillPairReg hl
@@ -77,11 +77,11 @@ _rle_decompress::
 	adc	a, -2 (ix)
 	ld	h, a
 	ld	a, (hl)
-;loader.c:18: if (byte == 0xC0) {
+;loader.c:15: if (byte == 0xC0) {
 	ld	-1 (ix), a
 	sub	a, #0xc0
 	jr	NZ, 00105$
-;loader.c:19: uint8_t val = src[i++];
+;loader.c:16: uint8_t val = src[i++];
 	ld	a, c
 	ld	h, b
 ;	spillPairReg hl
@@ -96,7 +96,7 @@ _rle_decompress::
 	ld	h, a
 	ld	a, (hl)
 	ld	-5 (ix), a
-;loader.c:20: uint8_t count = src[i++];
+;loader.c:17: uint8_t count = src[i++];
 	ld	a, c
 	ld	h, b
 ;	spillPairReg hl
@@ -111,7 +111,7 @@ _rle_decompress::
 	ld	h, a
 	ld	a, (hl)
 	ld	-1 (ix), a
-;loader.c:21: while (count--) {
+;loader.c:18: while (count--) {
 	ld	l, e
 ;	spillPairReg hl
 ;	spillPairReg hl
@@ -125,7 +125,7 @@ _rle_decompress::
 	ld	a, -4 (ix)
 	or	a, a
 	jr	Z, 00107$
-;loader.c:22: *dest++ = val;
+;loader.c:19: *dest++ = val;
 	ld	a, -5 (ix)
 	ld	(hl), a
 	inc	hl
@@ -133,97 +133,36 @@ _rle_decompress::
 	ld	d, h
 	jp	00101$
 00105$:
-;loader.c:25: *dest++ = byte;
+;loader.c:22: *dest++ = byte;
 	ld	a, -1 (ix)
 	ld	(de), a
 	inc	de
 	jp	00107$
 00110$:
-;loader.c:28: }
+;loader.c:25: }
 	ld	sp, ix
 	pop	ix
 	pop	hl
 	pop	af
 	jp	(hl)
-;loader.c:30: void main(void) __naked {
+;loader.c:27: void main(void) __naked {
 ;	---------------------------------
 ; Function main
 ; ---------------------------------
 _main::
-;loader.c:35: __endasm;
+;loader.c:32: __endasm;
 	di
 	im	1
 	ld	sp, #0xD000
-;loader.c:39: uint8_t *ptr = (uint8_t *)0x8000;
-	ld	bc, #0x8000
-;loader.c:40: uint8_t *data_start = 0;
-	xor	a, a
-	ld	-2 (ix), a
-	ld	-1 (ix), a
-;loader.c:43: while (ptr < (uint8_t *)0xFFFF) {
-	ld	de, #0x8000
-00106$:
-	ld	a, e
-	sub	a, #0xff
-	ld	a, d
-	sbc	a, #0xff
-	jr	NC, 00108$
-;loader.c:44: if (ptr[0] == MAGIC_1 && ptr[1] == MAGIC_2 && 
-	ld	a, (de)
-	push	de
-	pop	iy
-	inc	iy
-	sub	a, #0xde
-	jr	NZ, 00102$
-	ld	a, 0 (iy)
-	sub	a, #0xad
-	jr	NZ, 00102$
-;loader.c:45: ptr[2] == MAGIC_3 && ptr[3] == MAGIC_4) {
-	ld	l, e
-;	spillPairReg hl
-;	spillPairReg hl
-	ld	h, d
-;	spillPairReg hl
-;	spillPairReg hl
-	inc	hl
-	inc	hl
-	ld	a, (hl)
-	sub	a, #0xbe
-	jr	NZ, 00102$
-	ld	hl, #3
-	add	hl, de
-	ld	a, (hl)
-	sub	a, #0xef
-	jr	NZ, 00102$
-;loader.c:46: data_start = ptr + 4;
-	ld	hl, #0x0004
-	add	hl, bc
-	ld	-2 (ix), l
-	ld	-1 (ix), h
-;loader.c:47: break;
-	jp	00108$
-00102$:
-;loader.c:49: ptr++;
-	push	iy
-	pop	de
-	push	iy
-	pop	bc
-	jp	00106$
-00108$:
-;loader.c:52: if (data_start) {
-	ld	a, -1 (ix)
-	or	a, -2 (ix)
-	jp	Z,0x4000
-;loader.c:57: rle_decompress(data_start, (uint8_t *)0x4000, 0x7D3A); // 32058 bytes placeholder
+;loader.c:36: rle_decompress((uint8_t *)DATA_ADDR, (uint8_t *)0x4000, 0x7D3A); // 32058 bytes placeholder
 	ld	hl, #0x7d3a
 	push	hl
 	ld	de, #0x4000
-	pop	hl
-	push	hl
+	ld	hl, #0x8000
 	call	_rle_decompress
-;loader.c:63: __endasm;
+;loader.c:41: __endasm;
 	jp	0x4000
-;loader.c:64: }
+;loader.c:42: }
 	.area _CODE
 	.area _INITIALIZER
 	.area _CABS (ABS)

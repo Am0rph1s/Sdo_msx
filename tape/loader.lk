@@ -1,6 +1,6 @@
 -mjwx
 -i loader.ihx
--b _CODE = 0x8000
+-b _CODE = 0xc000
 -b _DATA = 0xd000
 -k C:\MSXgl\tools\sdcc\bin\..\lib\z80
 -l z80
