@@ -6,33 +6,59 @@ def create_cas(input_bin, output_cas, filename, load_addr, exec_addr):
         data = f.read()
 
     file_size = len(data)
-
-    # MSX Standard CAS Header (128 bytes)
-    header = bytearray(128)
-    header[0:3] = b'CAS'
-    header[3] = 0x00
-    # 4-7: Reserved (0x00)
-    header[8:8+len(filename)] = filename.encode('ascii').ljust(16, b' ')
-    header[24:28] = struct.pack('<I', 0) # File type: 0 = Binary
-    header[28:32] = struct.pack('<I', load_addr)
-    header[32:36] = struct.pack('<I', file_size)
-    header[36:40] = struct.pack('<I', exec_addr)
-    # 40-127: Padding (0x00)
-
+    
+    # MSX CAS Header sequence
+    HEADER_SEQ = bytes([0x1F, 0xA6, 0xDE, 0xBA, 0xCC, 0x13, 0x7D, 0x74])
+    
+    # Create the complete CAS file
+    cas_data = bytearray()
+    
+    # Add header sequence
+    cas_data.extend(HEADER_SEQ)
+    
+    # File type: 0xD0 = Binary
+    cas_data.append(0xD0)
+    
+    # Filename (6 bytes, padded with spaces)
+    fname_bytes = filename.encode('ascii').ljust(6, b' ')[:6]
+    cas_data.extend(fname_bytes)
+    
+    # Starting address (2 bytes, little-endian)
+    cas_data.extend(struct.pack('<H', load_addr))
+    
+    # Ending address (2 bytes, little-endian)
+    end_addr = load_addr + file_size - 1
+    cas_data.extend(struct.pack('<H', end_addr))
+    
+    # Execution address (2 bytes, little-endian)
+    cas_data.extend(struct.pack('<H', exec_addr))
+    
+    # File data
+    cas_data.extend(data)
+    
+    # Ensure total length is multiple of 8 bytes (pad with 0x00 if needed)
+    padding = (8 - (len(cas_data) % 8)) % 8
+    if padding > 0:
+        cas_data.extend(b'\x00' * padding)
+    
     with open(output_cas, 'wb') as f:
-        f.write(header)
-        f.write(data)
-    print(f"CAS file created: {output_cas} ({file_size} bytes)")
+        f.write(cas_data)
+        
+    print(f"CAS file created: {output_cas}")
+    print(f"File size: {len(cas_data)} bytes")
+    print(f"Load address: 0x{load_addr:04X}")
+    print(f"End address: 0x{end_addr:04X}")
+    print(f"Exec address: 0x{exec_addr:04X}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 5:
-        print("Usage: bin2cas.py <input.bin> <output.cas> <filename> <load_addr> [exec_addr]")
+    if len(sys.argv) < 6:
+        print("Usage: bin2cas.py <input.bin> <output.cas> <filename> <load_addr> <exec_addr>")
         sys.exit(1)
         
     inp = sys.argv[1]
     out = sys.argv[2]
     fname = sys.argv[3]
     load = int(sys.argv[4], 0)
-    exec_addr = int(sys.argv[5], 0) if len(sys.argv) > 5 else load
+    exec_addr = int(sys.argv[5], 0)
     
     create_cas(inp, out, fname, load, exec_addr)
