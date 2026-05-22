@@ -1194,8 +1194,10 @@ static void SpawnSingleEnemy(u8 x, u8 y, u8 patt, i8 vx, u8 type)
         }
         else
             g_Enemies[i].fire_cd = 0;
-        if (type == ENEMY_TYPE_DIVER) g_EnemyShots[i].cd = (u8)(Math_GetRandom8() & 1u);
-        else g_EnemyShots[i].cd = (u8)((g_WaveSpawned << 1) + (Math_GetRandom8() & 7u));
+        if (type == ENEMY_TYPE_DIVER)
+            g_EnemyShots[i].cd = (u8)(4u + (Math_GetRandom8() & 3u));
+        else
+            g_EnemyShots[i].cd = (u8)(16u + (i * 3u) + (Math_GetRandom8() & 3u));
         return;
     }
 }
@@ -2299,7 +2301,8 @@ void DrawHiScoreTable(u8 inputPos)
         if (i == inputPos)
         {
             char c[2];
-            c[0] = (char)g_HsInputChar[g_HsInputPos]; c[1] = 0;
+            c[0] = (char)((g_BlinkCtr & 0x10) ? g_HsInputChar[g_HsInputPos] : ' ');
+            c[1] = 0;
             HudDrawText((u8)(8 + 13 + g_HsInputPos), (u8)(10 + i * 2), c, HUD_FONT_COLOR_HI);
         }
     }
@@ -2952,6 +2955,10 @@ void UpdateMenuInput()
             return;
         }
         if (g_TitlePhase < 2) return;
+
+        // Blink cursor amb mateix patró que "FIRE TO START"
+        if ((g_BlinkCtr & 0x10) != ((u8)(g_BlinkCtr - 1) & 0x10))
+            g_TitleDirty = 1;
 
         if (key_cd > 0) { key_cd--; return; }
 
