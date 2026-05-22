@@ -2,16 +2,31 @@
 #include "msxgl.h"
 #include "psg.h"
 
+// BIOS GTTRIG (0x00D8) — direct CALL, compatible amb MSX1
+static u8 BiosTrig(u8 n)
+{
+    __asm
+        ld hl, #2
+        add hl, sp
+        ld a, (hl)
+        call 0x00D8
+        ld l, a
+        ld h, #0
+    __endasm;
+}
+
 // Trampoline code that will be copied to RAM
 // Must be position-independent
 static const u8 g_Trampoline[] = {
     0xF3,              // DI
-    0x3E, 0x02,        // LD A, 2
-    0x32, 0x00, 0x60,  // LD (0x6000), A   ; ASCII16 Page 1 (4000-5FFF) -> seg 2
-    0x32, 0x01, 0x60,  // LD (0x6001), A   ; ASCII16 Page 2 (6000-7FFF) -> seg 2
     0x3E, 0x03,        // LD A, 3
-    0x32, 0x02, 0x60,  // LD (0x6002), A   ; ASCII16 Page 3 (8000-9FFF) -> seg 3
-    0x32, 0x03, 0x60,  // LD (0x6003), A   ; ASCII16 Page 4 (A000-BFFF) -> seg 3
+    0x32, 0x00, 0x50,  // LD (0x5000), A   ; SCC Bank 0 (4000-5FFF) -> seg 3 (game_p1 first 8KB)
+    0x3E, 0x04,        // LD A, 4
+    0x32, 0x00, 0x70,  // LD (0x7000), A   ; SCC Bank 1 (6000-7FFF) -> seg 4 (game_p1 second 8KB)
+    0x3E, 0x05,        // LD A, 5
+    0x32, 0x00, 0x90,  // LD (0x9000), A   ; SCC Bank 2 (8000-9FFF) -> seg 5 (game_p2 first 8KB)
+    0x3E, 0x06,        // LD A, 6
+    0x32, 0x00, 0xB0,  // LD (0xB000), A   ; SCC Bank 3 (A000-BFFF) -> seg 6 (game_p2 second 8KB)
     0xFB,              // EI
     0xC3, 0x14, 0x40   // JP 0x4014         ; Jump to game entry point
 };
@@ -71,8 +86,8 @@ static void MusicTick(u8 step)
     PSG_SetRegister(5, (u8)((per >> 8) & 0x0F));
     PSG_SetRegister(10, MUSIC_VOL_C);
 
-    // Mixer: enable all 3 tone channels, disable noise
-    PSG_SetRegister(7, 0x38);
+    // Mixer: enable all 3 tone channels, disable noise, Port A=input (bit6=1) to not break joystick
+    PSG_SetRegister(7, 0xF8);
 }
 
 static void MusicSilence(void)
@@ -80,7 +95,7 @@ static void MusicSilence(void)
     PSG_SetRegister(8, 0);
     PSG_SetRegister(9, 0);
     PSG_SetRegister(10, 0);
-    PSG_SetRegister(7, 0x3F);
+    PSG_SetRegister(7, 0xBF);
 }
 
 void main()
@@ -98,12 +113,11 @@ void main()
     VDP_SetSpriteFlag(VDP_SPRITE_SIZE_16);
 
     // Copy raw SC2 data directly to VRAM (no compression)
-    // Raw data is at ROM address 0x8000 (segment 1), 16384 bytes
-    // Pattern table: 8192 bytes at VRAM 0x0000
-    src = (const u8*)0x8000;
+    // Seg 1 at bank 1 (0x6000-0x7FFF): pattern table (8192 bytes)
+    src = (const u8*)0x6000;
     VDP_WriteVRAM(src, 0x0000, 0x0000, 8192);
-    // Color table: 6144 bytes at VRAM 0x2000
-    src = (const u8*)0xA000;
+    // Seg 2 at bank 2 (0x8000-0x9FFF): color table (6144 bytes)
+    src = (const u8*)0x8000;
     VDP_WriteVRAM(src, 0x2000, 0x0000, 6144);
 
     // Disable sprites
@@ -112,6 +126,8 @@ void main()
 
     // Music + wait loop (exact CPC loader.s timing: 1 step per VSYNC, looped)
     mStep = 0;
+    while (BiosTrig(1) != 0)
+        Halt();
     while (1)
     {
         MusicTick(mStep);
@@ -126,7 +142,7 @@ void main()
             if (IS_KEY_PRESSED(kbd, KEY_SPACE)) goto music_done;
             kbd = Keyboard_Read(5);
             if (IS_KEY_PRESSED(kbd, KEY_Z)) goto music_done;
-            if ((Joystick_Read(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0) goto music_done;
+            if (BiosTrig(1) != 0) goto music_done;
         }
         mStep++;
         if (g_MusicDur[mStep] == 0) { mStep = 0; }  // Loop on terminator
@@ -144,3 +160,5 @@ music_done:
     // Jump to trampoline (in RAM)
     ((void (*)())0xC000)();
 }
+
+

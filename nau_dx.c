@@ -184,30 +184,19 @@ static void DisableAllSprites()
 // Helper: check if a redefinable key is pressed
 u8 IsKeyPressed(u8 key) { return IS_KEY_PRESSED(Keyboard_Read(key & 0x0F), key); }
 
-// BIOS joystick read via Gtstck (0x00D8) - reliable on all MSX
-static u8 ReadJoy(u8 port) __naked
-{
-__asm
-    ld a, l
-    rst 0x30
-    .dw 0x00D8
-    ld l, a
-    ret
-__endasm;
-}
+// Joystick input via PSG (Joystick_Read de MSXgl accedeix directament al PSG, no usa BIOS)
+// Format: bits 0-3=direccions, bit4=Trigger A, bit5=Trigger B (0=premut, 1=alliberat)
+// Les constants JOY_INPUT_TRIGGER_A/B ja estan definides a input.h (valors 0x10 i 0x20)
 
-// Joystick input helpers (Gtstck returns bits 0 when pressed)
-#define JOY_DIR()   (~ReadJoy(JOY_PORT_1) & 0x0F)
-#define JOY_FIRE()  ((ReadJoy(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0)
-
-// Unified input macros - check joystick or keyboard based on g_ControlMode
-#define INPUT_LEFT()   (g_ControlMode ? IsKeyPressed(g_KeyLeft)   : (JOY_DIR() & JOY_INPUT_DIR_LEFT))
-#define INPUT_RIGHT()  (g_ControlMode ? IsKeyPressed(g_KeyRight)  : (JOY_DIR() & JOY_INPUT_DIR_RIGHT))
-#define INPUT_UP()     (g_ControlMode ? IsKeyPressed(g_KeyUp)     : (JOY_DIR() & JOY_INPUT_DIR_UP))
-#define INPUT_DOWN()   (g_ControlMode ? IsKeyPressed(g_KeyDown)   : (JOY_DIR() & JOY_INPUT_DIR_DOWN))
-#define INPUT_FIRE()   (g_ControlMode ? IsKeyPressed(g_KeyFire)   : JOY_FIRE())
-#define INPUT_PAUSE()  (IsKeyPressed(g_KeyPause) || ((ReadJoy(JOY_PORT_1) & JOY_INPUT_TRIGGER_B) == 0))
-#define INPUT_QUIT()   (IsKeyPressed(g_KeyQuit))
+// Llegeix joystick una sola vegada per crida (evita inconsistències)
+#define JOY_STATE()       (~Joystick_Read(JOY_PORT_1))
+#define INPUT_LEFT()      (g_ControlMode ? IsKeyPressed(g_KeyLeft)   : (JOY_STATE() & JOY_INPUT_DIR_LEFT))
+#define INPUT_RIGHT()     (g_ControlMode ? IsKeyPressed(g_KeyRight)  : (JOY_STATE() & JOY_INPUT_DIR_RIGHT))
+#define INPUT_UP()        (g_ControlMode ? IsKeyPressed(g_KeyUp)     : (JOY_STATE() & JOY_INPUT_DIR_UP))
+#define INPUT_DOWN()      (g_ControlMode ? IsKeyPressed(g_KeyDown)   : (JOY_STATE() & JOY_INPUT_DIR_DOWN))
+#define INPUT_FIRE()      (g_ControlMode ? IsKeyPressed(g_KeyFire)   : (JOY_STATE() & JOY_INPUT_TRIGGER_A))
+#define INPUT_PAUSE()     (IsKeyPressed(g_KeyPause) || (JOY_STATE() & JOY_INPUT_TRIGGER_B))
+#define INPUT_QUIT()      (IsKeyPressed(g_KeyQuit))
 
 // Hi-scores
 #define HISCORE_COUNT    3
@@ -1891,26 +1880,22 @@ static void setToneC(u8 lo, u8 hi, u8 vol) {
 }
 
 static void updateMixer(void) {
-    // Enable tone channels based on active effects
-    PSG_EnableTone(PSG_CHANNEL_A, sfxA_kind != SFX_NONE);
-    PSG_EnableNoise(PSG_CHANNEL_A, FALSE);
-    
+    u8 mix = 0x80;
+    if (sfxA_kind == SFX_NONE) mix |= 0x01;
+    mix |= 0x08;
     if (sfxB_kind == SFX_EXP_ENEMY) {
-        PSG_EnableTone(PSG_CHANNEL_B, FALSE);
-        PSG_EnableNoise(PSG_CHANNEL_B, TRUE);
+        mix |= 0x02;
     } else if (sfxB_kind == SFX_EXP_SHIP) {
-        PSG_EnableTone(PSG_CHANNEL_B, TRUE);
-        PSG_EnableNoise(PSG_CHANNEL_B, TRUE);
     } else if (sfxB_kind != SFX_NONE) {
-        PSG_EnableTone(PSG_CHANNEL_B, TRUE);
-        PSG_EnableNoise(PSG_CHANNEL_B, FALSE);
+        mix |= 0x10;
     } else {
-        PSG_EnableTone(PSG_CHANNEL_B, FALSE);
-        PSG_EnableNoise(PSG_CHANNEL_B, FALSE);
+        mix |= 0x02;
+        mix |= 0x10;
     }
-    
-    PSG_EnableTone(PSG_CHANNEL_C, sfxC_kind == SFX_SHOT || sfxC_kind == SFX_GAMEOVER);
-    PSG_EnableNoise(PSG_CHANNEL_C, FALSE);
+    if (!(sfxC_kind == SFX_SHOT || sfxC_kind == SFX_GAMEOVER))
+        mix |= 0x04;
+    mix |= 0x20;
+    PSG_SetRegister(7, mix);
 }
 
 void soundStopAll(void) {
@@ -1927,7 +1912,7 @@ void soundInit(void) {
     PSG_SetVolume(PSG_CHANNEL_B, 0);
     PSG_SetVolume(PSG_CHANNEL_C, 0);
     // Disable keyboard click by setting mixer register (reg 7) to disable noise on all channels
-    PSG_SetRegister(7, 0x3F);
+    PSG_SetRegister(7, 0xBF);
     // Disable keyboard click via MSX system variable CLIKSW (0xF3DB)
     // 0 = key click off, non-zero = key click on
     __asm
@@ -1935,14 +1920,14 @@ void soundInit(void) {
         ld (#0xF3DB), a
     __endasm;
 }
-void sfxShot(void) { sfxC_kind = SFX_SHOT; sfxC_frame = 0; setToneC(30, 1, 9); PSG_EnableTone(PSG_CHANNEL_C, TRUE); PSG_EnableNoise(PSG_CHANNEL_C, FALSE); }
-void sfxEnemyExplosion(void) { sfxB_kind = SFX_EXP_ENEMY; sfxB_frame = 0; PSG_SetRegister(6, 0x04); PSG_SetVolume(PSG_CHANNEL_B, 13); PSG_EnableTone(PSG_CHANNEL_B, FALSE); PSG_EnableNoise(PSG_CHANNEL_B, TRUE); }
-void sfxShipExplosion(void) { sfxB_kind = SFX_EXP_SHIP; sfxB_frame = 0; setToneB(138, 1, 15); PSG_SetRegister(6, 0x04); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, TRUE); }
-void sfxBeep(void) { sfxA_kind = SFX_BEEP; sfxA_frame = 0; sfxB_kind = SFX_BEEP; sfxB_frame = 0; setToneA(172, 1, 15); setToneB(84, 1, 13); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, FALSE); }
-void sfxGameOver(void) { sfxA_kind = SFX_GAMEOVER; sfxA_frame = 0; sfxB_kind = SFX_GAMEOVER; sfxB_frame = 0; sfxC_kind = SFX_GAMEOVER; sfxC_frame = 0; setToneA(252, 1, 13); setToneB(172, 1, 13); setToneC(84, 1, 13); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); PSG_EnableTone(PSG_CHANNEL_B, TRUE); PSG_EnableNoise(PSG_CHANNEL_B, FALSE); PSG_EnableTone(PSG_CHANNEL_C, TRUE); PSG_EnableNoise(PSG_CHANNEL_C, FALSE); }
-void sfxLevelUp(void) { sfxA_kind = SFX_LEVELUP; sfxA_frame = 0; setToneA(172, 1, 14); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); }
-void sfxEnemyShot(void) { sfxB_kind = SFX_EXP_ENEMY; sfxB_frame = 3; PSG_SetRegister(6, 0x10); PSG_SetVolume(PSG_CHANNEL_B, 8); PSG_EnableTone(PSG_CHANNEL_B, FALSE); PSG_EnableNoise(PSG_CHANNEL_B, TRUE); }
-void sfxMenuSelect(void) { sfxA_kind = SFX_LEVELUP; sfxA_frame = 0; setToneA(172, 1, 15); PSG_EnableTone(PSG_CHANNEL_A, TRUE); PSG_EnableNoise(PSG_CHANNEL_A, FALSE); }
+void sfxShot(void) { sfxC_kind = SFX_SHOT; sfxC_frame = 0; setToneC(30, 1, 12); updateMixer(); }
+void sfxEnemyExplosion(void) { sfxB_kind = SFX_EXP_ENEMY; sfxB_frame = 0; PSG_SetRegister(6, 0x04); PSG_SetVolume(PSG_CHANNEL_B, 13); updateMixer(); }
+void sfxShipExplosion(void) { sfxB_kind = SFX_EXP_SHIP; sfxB_frame = 0; setToneB(138, 1, 15); PSG_SetRegister(6, 0x04); updateMixer(); }
+void sfxBeep(void) { sfxA_kind = SFX_BEEP; sfxA_frame = 0; sfxB_kind = SFX_BEEP; sfxB_frame = 0; setToneA(172, 1, 15); setToneB(84, 1, 13); updateMixer(); }
+void sfxGameOver(void) { sfxA_kind = SFX_GAMEOVER; sfxA_frame = 0; sfxB_kind = SFX_GAMEOVER; sfxB_frame = 0; sfxC_kind = SFX_GAMEOVER; sfxC_frame = 0; setToneA(252, 1, 13); setToneB(172, 1, 13); setToneC(84, 1, 13); updateMixer(); }
+void sfxLevelUp(void) { sfxA_kind = SFX_LEVELUP; sfxA_frame = 0; setToneA(172, 1, 14); updateMixer(); }
+void sfxEnemyShot(void) { sfxB_kind = SFX_EXP_ENEMY; sfxB_frame = 3; PSG_SetRegister(6, 0x10); PSG_SetVolume(PSG_CHANNEL_B, 11); updateMixer(); }
+void sfxMenuSelect(void) { sfxA_kind = SFX_LEVELUP; sfxA_frame = 0; setToneA(172, 1, 15); updateMixer(); }
 
 static void tickChannelA(void) {
     if (sfxA_kind == SFX_BEEP) {
@@ -2853,8 +2838,9 @@ void UpdateMenuInput()
     u8 row8 = Keyboard_Read(8);
     u8 row5 = Keyboard_Read(5);
     u8 row0 = Keyboard_Read(0); // tecles 1, 2, 3
-    u8 joy = ~ReadJoy(JOY_PORT_1) & 0x0F;
-    u8 joy_fire = (ReadJoy(JOY_PORT_1) & JOY_INPUT_TRIGGER_A) == 0;
+    u8 joy_state = JOY_STATE();
+    u8 joy_dir   = joy_state & JOY_INPUT_DIR_MASK;
+    u8 joy_fire  = joy_state & JOY_INPUT_TRIGGER_A;
     u8 kbd_fire = IS_KEY_PRESSED(row8, KEY_SPACE) || IS_KEY_PRESSED(row5, KEY_Z);
     u8 fire  = g_ControlMode ? kbd_fire : joy_fire;  // Only check input matching selected mode
 
@@ -2881,26 +2867,25 @@ void UpdateMenuInput()
         }
 
         // Control mode selection: 1=joystick, 2=keyboard, 3=set keys
-        if (IS_KEY_PRESSED(row0, KEY_1) || (joy & JOY_INPUT_DIR_LEFT))
+        if (IS_KEY_PRESSED(row0, KEY_1))
         {
             g_ControlMode = 0;
             g_TitleDirty = 1; g_TitlePhase = 0;
         }
-        else if (IS_KEY_PRESSED(row0, KEY_2) || (joy & JOY_INPUT_DIR_RIGHT))
+        else if (IS_KEY_PRESSED(row0, KEY_2))
         {
             g_ControlMode = 1;
             g_TitleDirty = 1; g_TitlePhase = 0;
         }
-        else if (IS_KEY_PRESSED(row0, KEY_3) || (joy & JOY_INPUT_DIR_DOWN))
+        else if (IS_KEY_PRESSED(row0, KEY_3))
         {
             g_TitleMode = TS_REDEFINE; g_RedefineStep = 0;
             g_TitleDirty = 1; g_TitlePhase = 0;
         }
         else if (fire)
         {
-            InitGamePlay();
             g_GameState  = GS_PLAYING;
-            sfxMenuSelect();
+            sfxBeep();
         }
 
         // Blink "FIRE TO START" - 1:1 CPC
@@ -2970,23 +2955,23 @@ void UpdateMenuInput()
 
         if (key_cd > 0) { key_cd--; return; }
 
-        if (IS_KEY_PRESSED(row8, KEY_UP))
+        if (IS_KEY_PRESSED(row8, KEY_UP) || (joy_dir & JOY_INPUT_DIR_UP))
         {
             g_HsInputChar[g_HsInputPos] = (g_HsInputChar[g_HsInputPos] >= 'Z') ? 'A' :
                                            (u8)(g_HsInputChar[g_HsInputPos] + 1);
             g_TitleDirty = 1; key_cd = 8;
         }
-        else if (IS_KEY_PRESSED(row8, KEY_DOWN))
+        else if (IS_KEY_PRESSED(row8, KEY_DOWN) || (joy_dir & JOY_INPUT_DIR_DOWN))
         {
             g_HsInputChar[g_HsInputPos] = (g_HsInputChar[g_HsInputPos] <= 'A') ? 'Z' :
                                            (u8)(g_HsInputChar[g_HsInputPos] - 1);
             g_TitleDirty = 1; key_cd = 8;
         }
-        else if (IS_KEY_PRESSED(row8, KEY_RIGHT) && g_HsInputPos < 2)
+        else if ((IS_KEY_PRESSED(row8, KEY_RIGHT) || (joy_dir & JOY_INPUT_DIR_RIGHT)) && g_HsInputPos < 2)
         {
             g_HsInputPos++; g_TitleDirty = 1; key_cd = 8;
         }
-        else if (IS_KEY_PRESSED(row8, KEY_LEFT) && g_HsInputPos > 0)
+        else if ((IS_KEY_PRESSED(row8, KEY_LEFT) || (joy_dir & JOY_INPUT_DIR_LEFT)) && g_HsInputPos > 0)
         {
             g_HsInputPos--; g_TitleDirty = 1; key_cd = 8;
         }
@@ -3164,9 +3149,9 @@ DisableAllSprites();
     {
         g_HsPos = 0;
         g_HsInputPos    = 0;
-        g_HsInputChar[0] = ' ';
-        g_HsInputChar[1] = ' ';
-        g_HsInputChar[2] = ' ';
+        g_HsInputChar[0] = 'A';
+        g_HsInputChar[1] = 'A';
+        g_HsInputChar[2] = 'A';
         g_TitleMode = TS_HISCORE_INPUT;
         g_TitleDirty = 1;
     }
@@ -3223,12 +3208,12 @@ DisableAllSprites();
             VDP_LoadBankColor_GM2(bar_col,  1, bank, BAR_FILL_TILE);
         }
     }
+    ResetGameSession();
     InitWallTiles();
     InitStarTiles();
     InitStars(g_S1, N1, STAR_TILE_BASE_1);
     InitStars(g_S2, N2, STAR_TILE_BASE_2);
     InitStars(g_S3, N3, STAR_TILE_BASE_3);
-    ResetGameSession();
 }
 
 //=============================================================================
@@ -3385,19 +3370,27 @@ void main()
                     if (!g_ShipExploding)
                     {
                         u8 thrust_now = 0;
-                        if (INPUT_LEFT()  && g_ShipX > SHIP_MIN_X) { g_ShipX -= g_ShipSpeedX; thrust_now = 1; }
-                        if (INPUT_RIGHT() && g_ShipX < SHIP_MAX_X) { g_ShipX += g_ShipSpeedX; thrust_now = 1; }
-                        if (INPUT_UP()    && g_ShipY > SHIP_MIN_Y) { g_ShipY -= g_ShipSpeedY; thrust_now = 1; }
-                        if (INPUT_DOWN()  && g_ShipY < SHIP_MAX_Y) { g_ShipY += g_ShipSpeedY; thrust_now = 1; }
+                        u8 joy_state = JOY_STATE();  // Llegeix joystick una sola vegada per frame
+                        if (g_ControlMode) {
+                            if (IsKeyPressed(g_KeyLeft)  && g_ShipX > SHIP_MIN_X) { g_ShipX -= g_ShipSpeedX; thrust_now = 1; }
+                            if (IsKeyPressed(g_KeyRight) && g_ShipX < SHIP_MAX_X) { g_ShipX += g_ShipSpeedX; thrust_now = 1; }
+                            if (IsKeyPressed(g_KeyUp)    && g_ShipY > SHIP_MIN_Y) { g_ShipY -= g_ShipSpeedY; thrust_now = 1; }
+                            if (IsKeyPressed(g_KeyDown)  && g_ShipY < SHIP_MAX_Y) { g_ShipY += g_ShipSpeedY; thrust_now = 1; }
+                        } else {
+                            if ((joy_state & JOY_INPUT_DIR_LEFT)  && g_ShipX > SHIP_MIN_X) { g_ShipX -= g_ShipSpeedX; thrust_now = 1; }
+                            if ((joy_state & JOY_INPUT_DIR_RIGHT) && g_ShipX < SHIP_MAX_X) { g_ShipX += g_ShipSpeedX; thrust_now = 1; }
+                            if ((joy_state & JOY_INPUT_DIR_UP)    && g_ShipY > SHIP_MIN_Y) { g_ShipY -= g_ShipSpeedY; thrust_now = 1; }
+                            if ((joy_state & JOY_INPUT_DIR_DOWN)  && g_ShipY < SHIP_MAX_Y) { g_ShipY += g_ShipSpeedY; thrust_now = 1; }
+                        }
                         g_ShipThrust = thrust_now;
 
-                       if (INPUT_FIRE() && g_FireCooldown == 0)
+                       if ((g_ControlMode ? IsKeyPressed(g_KeyFire) : (joy_state & JOY_INPUT_TRIGGER_A)) && g_FireCooldown == 0)
                      {
                          for (i = 0; i < MAX_SHOTS; i++)
                          {
                              if (!g_Shots[i].active)
                              {
-                                 g_Shots[i].x = g_ShipX + SHIP_W / 2 - 2;
+                                  g_Shots[i].x = g_ShipX + SHIP_W / 2 - 4;
                                  g_Shots[i].y = g_ShipY - 8;
                                  g_Shots[i].active = 1;
                                  g_FireCooldown = FIRE_COOLDOWN;

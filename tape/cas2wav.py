@@ -7,6 +7,7 @@ def generate_wav(input_bin, output_wav, filename, load_addr, exec_addr):
     with open(input_bin, 'rb') as f:
         data = f.read()
 
+    file_size = len(data)
     sample_rate = 44100
     
     # MSX 1200 baud standard:
@@ -19,12 +20,6 @@ def generate_wav(input_bin, output_wav, filename, load_addr, exec_addr):
 
     bit0_samples = gen_tone(1200, 1)   # Bit 0: 1 cycle at 1200 Hz
     bit1_samples = gen_tone(2400, 2)   # Bit 1: 2 cycles at 2400 Hz
-    
-    # Leader: 3 seconds of 1200 Hz tone
-    leader_samples = gen_tone(1200, 3600)
-    
-    # Gap: 1 second of silence
-    gap_samples = [128] * sample_rate
     
     def encode_byte(byte):
         samples = bytearray()
@@ -42,28 +37,46 @@ def generate_wav(input_bin, output_wav, filename, load_addr, exec_addr):
     
     wav_data = bytearray()
     
-    # Add leader
-    wav_data.extend(leader_samples)
+    SYNC = [0x1F, 0xA6, 0xDE, 0xBA, 0xCC, 0x13, 0x7D, 0x74]
+    end_addr = (load_addr + file_size - 1) & 0xFFFF
     
-    # Create MSX tape header (128 bytes)
-    header = bytearray(128)
-    header[0:3] = b'CAS'
-    header[3] = 0x00
-    header[8:8+len(filename)] = filename.encode('ascii').ljust(16, b' ')
-    header[24:28] = struct.pack('<I', 0)  # File type: 0 = Binary
-    header[28:32] = struct.pack('<I', load_addr)
-    header[32:36] = struct.pack('<I', len(data))
-    header[36:40] = struct.pack('<I', exec_addr)
+    # Leader: 3 seconds of 2400 Hz carrier (0xFF bytes)
+    for _ in range(360):
+        wav_data.extend(encode_byte(0xFF))
     
-    # Encode header
-    for byte in header:
-        wav_data.extend(encode_byte(byte))
+    # ---- Block 1: Header Block ----
+    # Sync
+    for b in SYNC:
+        wav_data.extend(encode_byte(b))
+    # Binary marker: 10 bytes of 0xD0
+    for _ in range(10):
+        wav_data.extend(encode_byte(0xD0))
+    # Filename (6 bytes, space-padded)
+    fname = filename.encode('ascii').ljust(6, b' ')[:6]
+    for b in fname:
+        wav_data.extend(encode_byte(b))
     
-    # Encode data
+    # ---- Block 2: Data Block ----
+    # Sync
+    for b in SYNC:
+        wav_data.extend(encode_byte(b))
+    # Binary data block marker: 0xFE
+    wav_data.extend(encode_byte(0xFE))
+    # Start address
+    for b in struct.pack('<H', load_addr):
+        wav_data.extend(encode_byte(b))
+    # End address
+    for b in struct.pack('<H', end_addr):
+        wav_data.extend(encode_byte(b))
+    # Exec address
+    for b in struct.pack('<H', exec_addr):
+        wav_data.extend(encode_byte(b))
+    # Data
     for byte in data:
         wav_data.extend(encode_byte(byte))
     
-    # Add gap at end
+    # Gap at end
+    gap_samples = [128] * sample_rate
     wav_data.extend(gap_samples)
     
     with wave.open(output_wav, 'w') as wf:
@@ -75,6 +88,7 @@ def generate_wav(input_bin, output_wav, filename, load_addr, exec_addr):
     duration = len(wav_data) / sample_rate
     print(f"WAV file created: {output_wav}")
     print(f"Duration: {duration:.1f} seconds ({duration/60:.1f} minutes)")
+    print(f"Load: 0x{load_addr:04X}, End: 0x{end_addr:04X}, Exec: 0x{exec_addr:04X}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 6:

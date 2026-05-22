@@ -1,17 +1,50 @@
-ProjName = "nau_dx_intro";
-ProjModules = [ "nau_dx_intro" ];
-LibModules = [ "system", "bios", "vdp", "print", "input", "psg" ];
+// Nau DX - MSX1 Port
+// Project configuration for MSXgl Build Tool
+
+//*******************************************************************************
+// BUILD STEPS
+//*******************************************************************************
+
+//*****************************************************************************
+// TOOLS SETTINGS
+//*****************************************************************************
+
+//*****************************************************************************
+// PROJECT SETTINGS
+//*****************************************************************************
+
+//-- Project name
+ProjName = "nau_dx";
+
+//-- List of project modules to build
+ProjModules = [ ProjName ];
+
+//-- List of library modules to build
+LibModules = [ "system", "bios", "vdp", "print", "input", "memory", "math", "draw", "psg" ];
+//-- Target MSX machine version
 Machine = "1";
-Target = "ROM_ASCII16";
-ROMSize = 64;
-ProjSegments = "nau_dx_intro";
+
+//-- Target program format
+Target = "ROM_32K";
+
+//*******************************************************************************
+// SIGNATURE SETTINGS
+//*******************************************************************************
+
 AppSignature = true;
 AppCompany = "ND";
 AppID = "N1";
+
+//*******************************************************************************
+// MAKE SETTINGS
+//*******************************************************************************
+
 Optim = "Speed";
-RawFiles = [
-    { segment: 1, file: "intro_sc2_raw.bin" },
-    { segment: 2, file: "game_p1.bin" },
-    { segment: 3, file: "game_p2.bin" }
-];
+
+CheckVersion = false;
+
+//*****************************************************************************
+// BUILD TOOL OPTION
+//*****************************************************************************
+
 Verbose = true;
