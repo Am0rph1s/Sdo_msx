@@ -1188,7 +1188,7 @@ static void SpawnSingleEnemy(u8 x, u8 y, u8 patt, i8 vx, u8 type)
         if (type == ENEMY_TYPE_DIVER)
             g_EnemyShots[i].cd = (u8)(4u + (Math_GetRandom8() & 3u));
         else
-            g_EnemyShots[i].cd = (u8)(16u + (i * 3u) + (Math_GetRandom8() & 3u));
+            g_EnemyShots[i].cd = (u8)(8u + (i * 2u) + (Math_GetRandom8() & 3u));
         return;
     }
 }
