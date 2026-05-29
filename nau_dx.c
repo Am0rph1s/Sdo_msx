@@ -3544,6 +3544,7 @@ void main()
                   // Enemies - RED layer last (details, lowest priority - discarded first on sprite overflow)
                   {
                       static const u8 etype_pat_r[5] = {20, 28, 36, 44, 52};
+                      static const u8 etype_col_r[5] = {COLOR_MEDIUM_RED, COLOR_DARK_YELLOW, COLOR_MEDIUM_RED, COLOR_MEDIUM_RED, COLOR_MEDIUM_RED};
                       for (i = 0; i < MAX_ENEMIES && spr < 28; i++)
                       {
                           if (!g_Enemies[i].active) continue;
@@ -3554,7 +3555,7 @@ void main()
                           }
                           else
                           {
-                              g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = etype_pat_r[j];  g_SprBuf[spr*4+3] = COLOR_MEDIUM_RED; spr++;
+                              g_SprBuf[spr*4+0] = g_Enemies[i].y;  g_SprBuf[spr*4+1] = g_Enemies[i].x;  g_SprBuf[spr*4+2] = etype_pat_r[j];  g_SprBuf[spr*4+3] = etype_col_r[j]; spr++;
                           }
                       }
                   }
