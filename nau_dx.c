@@ -1128,11 +1128,22 @@ static void BuildWaveLayoutFastRank(u8 n)
     }
     else if (n == 5)
     {
-        g_WaveSlotY[0] = 20;
-        g_WaveSlotY[1] = 20;
-        g_WaveSlotY[2] = 20;
-        g_WaveSlotY[3] = 0;
-        g_WaveSlotY[4] = 0;
+        u8 s = (u8)(ENEMY_W + 4);
+        u8 cx = (u8)(GAME_X0 + GAME_W / 2);
+        // 3 enemies at Y=20: spread across game width
+        g_WaveSlotX[0] = (u8)(cx - s);
+        g_WaveSlotX[1] = cx;
+        g_WaveSlotX[2] = (u8)(cx + s);
+        g_WaveSlotY[0] = 20; g_WaveSlotY[1] = 20; g_WaveSlotY[2] = 20;
+        // 2 enemies at Y=0: tighter in center
+        g_WaveSlotX[3] = (u8)(cx - (ENEMY_W / 2));
+        g_WaveSlotX[4] = (u8)(cx + (ENEMY_W / 2));
+        g_WaveSlotY[3] = 0;  g_WaveSlotY[4] = 0;
+        // Clamp
+        for (u8 j = 0; j < 5; j++) {
+            if (g_WaveSlotX[j] < GAME_X0) g_WaveSlotX[j] = GAME_X0;
+            if (g_WaveSlotX[j] > (u8)(GAME_X1 - ENEMY_W)) g_WaveSlotX[j] = (u8)(GAME_X1 - ENEMY_W);
+        }
     }
 }
 
