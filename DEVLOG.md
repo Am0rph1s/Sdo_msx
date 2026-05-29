@@ -1,117 +1,57 @@
-# Devlog: Porting Nau DX from Amstrad CPC to MSX1
+# Devlog: Nau DX — From Amstrad CPC to MSX1
 
-## The Challenge
+Nau DX is a horizontal shoot-em-up originally written for the Amstrad CPC, already ported to ZX Spectrum. This is the MSX1 conversion.
 
-Take a complete space shooter from the Amstrad CPC, written for a 4MHz Z80 with 128KB of RAM and a 16-color palette, and make it run on an MSX1 — a 3.58MHz Z80 with just 16KB of RAM, 15 colors, and a completely different video chip. Oh, and it had to feel exactly like the original.
+## The joystick that broke on real hardware
 
-Here's what broke, what we learned, and how we fixed it.
+Everything worked perfectly in the emulator. On a real Sony HB-75P, the ship fired non-stop and refused to move in any direction. The keyboard was fine. Only the joystick had the problem.
 
----
+The MSX reads joystick input through the same chip that plays music — the PSG sound generator. One register in that chip, number 7, controls whether the chip's I/O pins listen for input or send output. Set it wrong and the joystick port goes deaf.
 
-## 1. The Joystick That Wouldn't Work
+The problem was a read-then-write pattern happening inside the sound library. Every time a sound effect enabled or disabled a channel, it would read register 7, flip a couple of bits, and write it back. But two bits in that register always read as zero, no matter what you wrote there. So every sound effect was silently switching the joystick port off.
 
-**The problem:** On real hardware (a Sony HB-75P), the ship shot continuously and refused to move. But it worked fine in emulators.
+The fix was to stop reading register 7 entirely. Every place that touched it now computes the full register value from scratch, always keeping the joystick port in input mode. The intro music player needed the same treatment — its original register value was also putting the port in output mode, a configuration that some older MSX models warn against because it can cause electrical conflicts with the keyboard.
 
-**The cause:** The MSX reads the joystick through the PSG sound chip's I/O port. Register 7 of the YM2149 controls whether the port reads external input or drives output. Bits 6-7 are **write-only** — they always read back as zero. Every time a sound effect called the mixer update (which does read-modify-write on register 7), the returned zeros overwrote the port direction. Port A switched to output mode, and the joystick went dead.
+## Making sprites on a console with no real palette
 
-**The fix:** Never read register 7. Compute the mixer value directly and always set bit 6 to 1 (Port A = input). Every sound effect function was rewritten to call the safe mixer update instead of the library's read-modify-write version. The intro music player got the same treatment — its value `0xF8` was also silently putting the ports in output mode.
+The CPC draws sprites in mode 0 — wide pixels with 4 colors per sprite. A ship might have a white body, cyan highlights, red cockpit details, and yellow accents, all in one sprite. The MSX1 video chip handles sprites differently. Each sprite is one bit per pixel, flat, with a single color picked from a fixed 15-color palette. You can't have a white-and-red ship in a single sprite.
 
-**Lesson learned:** On the YM2149, register 7 bits 6-7 are write-only. Any read-modify-write pattern will silently corrupt them.
+The solution was to split every sprite into two layers drawn on top of each other. A white layer carries the main silhouette. A red layer, positioned at the exact same coordinates, carries the details. The video chip composites them automatically. Every enemy type — basic, fast, heavy, diver, bomber — and the boss uses this two-layer approach. It costs twice the sprite slots but the MSX has 32 hardware sprites, so there is room.
 
----
+## C code that runs at 50 frames per second
 
-## 2. Sprites: Two Layers Where CPC Had One
+The game logic was ported from CPC assembler to C, compiled with SDCC. The first builds ran at the correct speed, but there was headroom to improve. A couple of targeted optimizations made a difference.
 
-**The problem:** CPC sprites use mode 0 (16 colors, 4 per pixel with wide pixels). MSX sprites have one bit per pixel with a single color per sprite. A CPC ship with white hull and red cockpit detail doesn't directly translate.
+The enemy update loop accesses each enemy's position, speed, pattern, health, and timers multiple times per frame. On Z80, accessing a struct field means recalculating the memory address every time. Putting a pointer to the current enemy in a local variable lets the compiler use faster register-based addressing for all subsequent accesses. The boss AI section, with its vertical oscillation, lateral movement, and firing logic, benefited most.
 
-**The fix:** Split every sprite into two overlapping layers. A "white" layer carries the main shape, a "red" layer carries the detail. Both are placed at the same screen position with different sprite colors. The VDP composites them naturally. The player ship, all five enemy types, and the boss all use this technique. 
+Another win came from the sprite attribute table. The original code wrote all 32 sprite entries to the video chip every frame — all 128 bytes — regardless of how many sprites were actually visible. The new code tracks how many entries were used and only sends that many. On the title screen, where zero sprites are active, zero bytes go to the video chip. Every byte saved matters when the CPU and video chip share the same bus.
 
-Seven sprites × two layers = 14 sprite slots in the pattern table. With 32 hardware sprites available on screen, the two-layer approach fits comfortably — but the red layer is drawn last so it gets discarded first on sprite overflow.
+## One game, two speeds
 
----
+European MSX machines run at 50 frames per second. Japanese and American machines run at 60. The game logic is frame-based — one update per frame — so on a 60 Hz machine everything would move twenty percent faster. Enemies shoot sooner, bullets fly quicker, and the whole difficulty curve shifts.
 
-## 3. Audio and Input: Sharing Is Hard
+The fix is simple: detect the refresh rate at startup and, on 60 Hz hardware, skip exactly one out of every six frames. Five updates, one skip, repeat. This locks the effective speed to 50 Hz on any machine. The game plays the same in Tokyo or Barcelona.
 
-**The problem:** The game needs sound effects AND joystick input simultaneously. Both go through the same chip (the PSG). The MSXgl library's `EnableTone` functions modify register 7 — exactly the same register that controls the joystick port.
+## Fitting a full game in 32 kilobytes
 
-**The fix:** We wrote our own `updateMixer` function. It computes the entire register 7 value from scratch — which tone channels are active, which noise channels are muted, and critically, bit 6 always set to 1. When the intro transitions to the game, the music silence routine also writes a safe value (`0x3F` with both I/O ports as input) so the joystick works from the very first in-game frame.
+The MSX1 cartridge format gives you 32KB of ROM space. The compiled game code, all the sprite data, the level layouts, the sound effects, and the menu graphics all had to fit. The final build leaves eight bytes free.
 
----
+Things that saved space: removing a division call from the score system and replacing it with a simple threshold comparison, hand-optimizing the wall scroll routine in assembler, and stripping unused library code from the engine build.
 
-## 4. Video Memory Overflows From Nowhere
+## The intro screen that needed a memory mapper
 
-**The problem:** During boss fights, the left wall would occasionally show garbage tiles — random HP bar pixels appearing in the rock pattern. It only happened at specific screen positions.
+The intro shows a full-screen color image with background music before the game starts — a 12 kilobyte screen plus audio. That alone would eat nearly half the cartridge. Together with the 32KB game, it does not fit in a standard ROM.
 
-**The cause:** The boss HP bar draws 5 filled segments starting at column 28. The screen is 32 columns wide (0-31). That 5th segment landed on column 32 — which in the VDP's name table is the same memory as column 0 of the *next* row. The bar was silently writing over the wall tiles one row below.
+The solution was a mapper chip, the Konami SCC, which divides the cartridge into eight 8KB segments and lets you choose which ones are visible to the CPU at any moment. The intro sits in the first two segments. The game is split across four more. When the intro ends, a tiny assembly routine switches all four banks simultaneously and jumps directly into the game. The transition is instant — no loading bar, no black screen, no waiting.
 
-**The fix:** Shift the entire HP bar one column left (start at column 27 instead of 28). Five segments now fit within columns 27-31. No overflow, no wall corruption.
+## Wall tiles that mysteriously changed
 
-**Similar issue:** The HUD cleanup strings were 10 characters long at column 25 (wrapping to column 0-2 of the next row). Shortened to 7 characters.
+During boss fights, the wall on the left side of the screen would sometimes show weird blocks at the same height as the boss health bar. Every time the bar updated, the wall glitched.
 
----
+The boss HP bar draws five filled blocks at the right edge of the screen, starting at column twenty-seven. The screen is thirty-two columns wide. Simple math. But the original code started drawing at column twenty-eight. Five blocks from column twenty-eight reaches column thirty-two — which in the video chip's memory is the same address as column zero of the next row, where the wall lives. The fifth block of the health bar was silently overwriting the wall one row below.
 
-## 5. The SDCC Performance Wall
+Three bugs like this — the HP bar overflow, a text cleanup string wrapping around the screen edge, and the game running uncapped at 60 Hz — all appeared at roughly the same time and caused symptoms that looked exactly like a memory overflow. Corrupt tiles, enemies ignoring boundaries, slowdown. We blamed RAM, rewrote struct layouts, reverted optimizations. It was never RAM. It was three tiny video memory overflows hiding in plain sight, each one completely invisible in emulators that do not warn about out-of-bounds VRAM writes.
 
-**The problem:** SDCC (the C compiler for Z80) generates decent but not great code. The CPC original ran at a comfortable frame rate. On MSX with SDCC, complex frames with many enemies and bullets would occasionally drop below 50Hz.
+## The result
 
-**The victories (things we kept):**
-
-- **Pointer caching in hot loops:** The enemy update loop accesses `enemies[i].x`, `.y`, `.type`, `.health`, `.vx`, `.vy`, `.zig_timer` up to 40 times per enemy. Each access recalculates the struct offset on Z80. Caching a pointer (`enemy = &enemies[i]`) lets SDCC use register-based access through `(HL + offset)`. Huge savings in the boss AI section.
-
-- **VDP partial writes:** The original code wrote all 32 sprite attributes to VRAM every frame (128 bytes) regardless of how many sprites were actually visible. The new code tracks the last frame's sprite count and only writes the used range plus any newly-disabled slots. When no sprites are active (menus, title screens), VRAM writes drop to zero bytes.
-
-- **Extra life check without division:** The old code divided the score by 5000 using SDCC's `__divuint` routine (~800 cycles on Z80). The new code tracks a `nextLifeAt` threshold and compares directly. No division, zero function calls.
-
-**The casualty (thing we reverted):** Struct padding to power-of-2 sizes looked promising on paper (faster array indexing via shifts), but the extra 30+ bytes of RAM pushed us too close to the stack and caused unpredictable corruption during gameplay.
-
----
-
-## 6. PAL vs NTSC: One Game, Two Speeds
-
-**The problem:** MSX machines run at either 50Hz (PAL, Europe) or 60Hz (NTSC, Japan/Americas). At 50Hz, the game updates 50 times per second. At 60Hz, everything moves 20% faster — enemies are harder, bullets fly faster, and the difficulty curve is completely different.
-
-**The fix:** Detect the refresh rate at startup using the VDP status register. On 60Hz machines, skip exactly 1 out of every 6 frames (a 6-frame cycle: 5 game updates, 1 skip). This brings the effective update rate to 50 per second on any hardware. The timing is consistent, and the HP bar, wall scroll, music, and everything else behaves the same everywhere.
-
----
-
-## 7. Memory Mapper Dance
-
-**The problem:** The intro screen is a full-screen 16-color image (12KB of VRAM data) plus background music. The game itself is 32KB of code and data. Together they don't fit in a standard 32KB ROM cartridge.
-
-**The fix:** Use the Konami SCC mapper to create a 64KB ROM. The intro occupies segments 1-2 (16KB for the screen image and music). The game is split into four 8KB chunks across segments 3-6. When the intro finishes (or the player presses fire), a tiny assembly trampoline switches all four mapper banks simultaneously and jumps to the game entry point. The transition is instant — no loading screen, no delay.
-
----
-
-## 8. Enemy Waves: Keeping Them Interesting But Fair
-
-**The original CPC behavior:** Enemies spawned and immediately fired a volley — every enemy in the wave shooting at the same time. Visually chaotic, and against fast enemies whose bullets move with their ship movement, almost impossible to dodge.
-
-**Our adjustment:** Each enemy gets a staggered initial cooldown based on its slot index in the array. The first enemy shoots after about 0.13 seconds (8 frames), the last after about 0.4 seconds (25 frames). Different enough that you can dodge them individually, tight enough that waves still feel aggressive.
-
-**Wave spacing:** Some wave layouts at higher levels (5 fast enemies) would place two enemies at the exact same screen position due to how rows were distributed. We gave the 5-enemy fast wave an explicit position layout instead of letting the generic row-based algorithm overlap them.
-
----
-
-## 9. The Bug That Wasn't RAM
-
-For several frustrating hours we chased a phantom RAM overflow. The game corrupted itself in bizarre ways — wrong tiles on walls, enemies passing through boundaries, slowdowns. The struct padding optimization added ~30 bytes of RAM and we blamed it. Reverted it. Still broken.
-
-The real culprits? **Three tiny VRAM overflows hiding in plain sight:**
-
-1. The HP bar's 5th column writing to screen position 32 (wrap to next row)
-2. The HUD clear string (10 chars starting at column 25, wrapping to column 0)
-3. Running uncapped at 60Hz making everything too fast and exposing race conditions
-
-Once all three were fixed — without touching a single byte of RAM allocation — the game ran perfectly. Sometimes the simplest bugs hide behind the most intimidating symptoms.
-
----
-
-## What's Left
-
-The game is functionally complete. Remaining polish items are cosmetic: testing the full intro+game ROM on real hardware, fine-tuning difficulty, and maybe adding a splash of yellow to one enemy type for visual variety.
-
-The ROM fits in 32KB with 8 bytes to spare. The intro version uses a 64KB mapper cartridge. Both run at a locked 50Hz on any MSX1 hardware.
-
----
-
-*This was a port that started with a non-working joystick on real hardware and ended with a smooth 50Hz shooter. The MSX1 is a quirky but capable machine — once you learn to keep your PSG ports in input mode, your VDP column counts under 32, and your SDCC loops cache their pointers.*
+A 50 Hz horizontal shooter on MSX1, with intro screen and music on a 64KB mapper cartridge, five enemy types, multi-tier boss fights, starfield scrolling, 25 levels, and configurable controls. The standalone game ROM fits in 32KB. After a week of debugging a joystick that only failed on real hardware and three VRAM bugs that impersonated a memory leak, it is ready to play.
