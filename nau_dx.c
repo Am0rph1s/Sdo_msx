@@ -243,10 +243,10 @@ static u8 g_CurrentBiome = 0;
 //=============================================================================
 
 typedef struct { u8 x; u8 y; } TStar;
-typedef struct { u8 x; u8 y; u8 active; } TShot;
-typedef struct { u8 x; u8 y; u8 active; u8 type; u8 fire_cd; i8 vx; u8 vy; u8 pattern; u8 zig_timer; u8 health; u8 boss_hp_max; u8 boss_lane_x0; u8 boss_vosc; } TEnemy;
+typedef struct { u8 x; u8 y; u8 active; u8 _p0; } TShot;
+typedef struct { u8 x; u8 y; u8 active; u8 type; u8 fire_cd; i8 vx; u8 vy; u8 pattern; u8 zig_timer; u8 health; u8 boss_hp_max; u8 boss_lane_x0; u8 boss_vosc; u8 _p0; u8 _p1; u8 _p2; } TEnemy;
 typedef struct { u8 x; u8 y; u8 active; i8 vx; u8 vy; u8 pattern; u8 cd; u8 type; } TEnemyShot;
-typedef struct { u8 x; u8 y; u8 active; u8 frame; u8 kind; } TExplosion;
+typedef struct { u8 x; u8 y; u8 active; u8 frame; u8 kind; u8 _p0; u8 _p1; u8 _p2; } TExplosion;
 typedef struct { u16 score; u8 level; u8 name[3]; } THiScore;
 typedef struct { u8 waves; u8 per_wave; u8 mask; u8 flags; u8 intro_mask; } TLevelConfig;
 
@@ -784,24 +784,18 @@ static u8 BossTierFromLevel(u8 lv);
 // Boss max HP per tier (macro to save function call overhead)
 #define GetBossMaxHP(t) ((u8)(BOSS_HP_BASE + (t) * BOSS_HP_PER_TIER))
 
-static u8 ScoreFloorExtraLives(u16 s)
-{
-    return (u8)(s / EXTRA_LIFE_EVERY);
-}
+static u16 g_NextLifeAt = EXTRA_LIFE_EVERY;
 
 static void AddScore(u16 points)
 {
     u16 old_score = g_Score;
     u16 new_score = (u16)(g_Score + points);
-    u8 hi, lo;
 
     g_Score = (new_score < g_Score) ? 65535u : new_score;
-    hi = ScoreFloorExtraLives(g_Score);
-    lo = ScoreFloorExtraLives(old_score);
-    while (hi > lo)
+    while (g_Score >= g_NextLifeAt)
     {
-        lo++;
         g_Lives++;
+        g_NextLifeAt += EXTRA_LIFE_EVERY;
         g_BonusDisplayCnt = 20;
         sfxBeep();
     }
@@ -1664,12 +1658,13 @@ void UpdateEnemies()
     // 1:1 CPC: moveEnemies
     for (i = 0; i < MAX_ENEMIES; i++)
     {
-        if (!g_Enemies[i].active) continue;
+        TEnemy* e = &g_Enemies[i];
+        if (!e->active) continue;
 
         // Boss-specific behavior
-        if (g_Enemies[i].type == ENEMY_TYPE_BOSS)
+        if (e->type == ENEMY_TYPE_BOSS)
         {
-            u8 pivot = g_Enemies[i].boss_lane_x0;
+            u8 pivot = e->boss_lane_x0;
             u8 hold = BOSS_HOLD_Y;
             u8 ymin = (u8)(hold - BOSS_Y_OSC);
             i16 nxx, dxp;
@@ -1686,63 +1681,63 @@ void UpdateEnemies()
             }
             
             if (ymin < GAME_Y0 + 4u) ymin = GAME_Y0 + 4u;
-            if (g_Enemies[i].boss_vosc == BOSS_VOSC_DESC)
+            if (e->boss_vosc == BOSS_VOSC_DESC)
             {
-                if (g_Enemies[i].y < hold)
+                if (e->y < hold)
                 {
-                    g_Enemies[i].y = (u8)(g_Enemies[i].y + g_Enemies[i].vy);
-                    if (g_Enemies[i].y > hold) g_Enemies[i].y = hold;
+                    e->y = (u8)(e->y + e->vy);
+                    if (e->y > hold) e->y = hold;
                 }
-                if (g_Enemies[i].y >= hold) g_Enemies[i].boss_vosc = BOSS_VOSC_UP;
+                if (e->y >= hold) e->boss_vosc = BOSS_VOSC_UP;
             }
-            else if (g_Enemies[i].boss_vosc == BOSS_VOSC_UP)
+            else if (e->boss_vosc == BOSS_VOSC_UP)
             {
-                if (g_Enemies[i].y > ymin) g_Enemies[i].y--;
-                else g_Enemies[i].boss_vosc = BOSS_VOSC_DOWN;
+                if (e->y > ymin) e->y--;
+                else e->boss_vosc = BOSS_VOSC_DOWN;
             }
             else
             {
-                if (g_Enemies[i].y < hold) g_Enemies[i].y++;
-                else g_Enemies[i].boss_vosc = BOSS_VOSC_UP;
+                if (e->y < hold) e->y++;
+                else e->boss_vosc = BOSS_VOSC_UP;
             }
             
             // CPC-style random lateral oscillation
-            if (g_Enemies[i].zig_timer)
-                g_Enemies[i].zig_timer--;
+            if (e->zig_timer)
+                e->zig_timer--;
             else
             {
                 u8 r;
-                if (tier >= 3) g_Enemies[i].zig_timer = (u8)(6u + (NEXT_RAND() & 7u));
-                else if (tier == 2) g_Enemies[i].zig_timer = (u8)(7u + (NEXT_RAND() & 7u));
-                else if (tier == 1) g_Enemies[i].zig_timer = (u8)(8u + (NEXT_RAND() & 7u));
-                else g_Enemies[i].zig_timer = (u8)(8u + (NEXT_RAND() & 11u));
+                if (tier >= 3) e->zig_timer = (u8)(6u + (NEXT_RAND() & 7u));
+                else if (tier == 2) e->zig_timer = (u8)(7u + (NEXT_RAND() & 7u));
+                else if (tier == 1) e->zig_timer = (u8)(8u + (NEXT_RAND() & 7u));
+                else e->zig_timer = (u8)(8u + (NEXT_RAND() & 11u));
                 r = NEXT_RAND() & 7u;
                 if (tier >= 2)
                 {
-                    if (r < 4u) g_Enemies[i].vx = (g_Enemies[i].vx < 0) ? -2 : 2;
-                    else g_Enemies[i].vx = (NEXT_RAND() & 1u) ? 2 : -2;
+                    if (r < 4u) e->vx = (e->vx < 0) ? -2 : 2;
+                    else e->vx = (NEXT_RAND() & 1u) ? 2 : -2;
                 }
                 else
                 {
-                    if (r < 3u) g_Enemies[i].vx = (g_Enemies[i].vx < 0) ? -2 : 2;
-                    else if (r < 6u) g_Enemies[i].vx = (NEXT_RAND() & 1u) ? 1 : -1;
-                    else g_Enemies[i].vx = (NEXT_RAND() & 1u) ? 2 : -2;
+                    if (r < 3u) e->vx = (e->vx < 0) ? -2 : 2;
+                    else if (r < 6u) e->vx = (NEXT_RAND() & 1u) ? 1 : -1;
+                    else e->vx = (NEXT_RAND() & 1u) ? 2 : -2;
                 }
-                if (!g_Enemies[i].vx) g_Enemies[i].vx = 1;
+                if (!e->vx) e->vx = 1;
             }
             
-            dxp = (i16)pivot - (i16)g_Enemies[i].x;
-            if (dxp > 10 && g_Enemies[i].vx < 2) g_Enemies[i].vx++;
-            else if (dxp < -10 && g_Enemies[i].vx > -2) g_Enemies[i].vx--;
-            nxx = (i16)g_Enemies[i].x + (i16)g_Enemies[i].vx;
-            if (nxx < (i16)xmn) { g_Enemies[i].x = xmn; g_Enemies[i].vx = (g_Enemies[i].vx < 0) ? 2 : 1; }
-            else if (nxx > (i16)xmx) { g_Enemies[i].x = xmx; g_Enemies[i].vx = (g_Enemies[i].vx > 0) ? -2 : -1; }
-            else g_Enemies[i].x = (u8)nxx;
+            dxp = (i16)pivot - (i16)e->x;
+            if (dxp > 10 && e->vx < 2) e->vx++;
+            else if (dxp < -10 && e->vx > -2) e->vx--;
+            nxx = (i16)e->x + (i16)e->vx;
+            if (nxx < (i16)xmn) { e->x = xmn; e->vx = (e->vx < 0) ? 2 : 1; }
+            else if (nxx > (i16)xmx) { e->x = xmx; e->vx = (e->vx > 0) ? -2 : -1; }
+            else e->x = (u8)nxx;
             
             // Boss firing: determine tier to get bullet count
             tier = (g_Level >= 25) ? 4 : ((g_Level - 1) / 5);
-            if (g_Enemies[i].fire_cd > 0) 
-                g_Enemies[i].fire_cd--;
+            if (e->fire_cd > 0) 
+                e->fire_cd--;
             else 
             { 
                 BossFireVolley(i);
@@ -1751,39 +1746,39 @@ void UpdateEnemies()
         else
         {
             // Regular enemy movement
-            g_Enemies[i].y += g_Enemies[i].vy;
+            e->y += e->vy;
 
-            if (g_Enemies[i].pattern == PATT_ZIGZAG)
+            if (e->pattern == PATT_ZIGZAG)
             {
-                if (g_Enemies[i].zig_timer) g_Enemies[i].zig_timer--;
-                else { g_Enemies[i].zig_timer = 6; g_Enemies[i].vx = -g_Enemies[i].vx; }
-                g_Enemies[i].x = (u8)((i8)g_Enemies[i].x + g_Enemies[i].vx);
-                if (g_Enemies[i].x < GAME_X0)        g_Enemies[i].x = GAME_X0;
-                if (g_Enemies[i].x > GAME_X1-ENEMY_W) g_Enemies[i].x = (u8)(GAME_X1-ENEMY_W);
+                if (e->zig_timer) e->zig_timer--;
+                else { e->zig_timer = 6; e->vx = -e->vx; }
+                e->x = (u8)((i8)e->x + e->vx);
+                if (e->x < GAME_X0)        e->x = GAME_X0;
+                if (e->x > GAME_X1-ENEMY_W) e->x = (u8)(GAME_X1-ENEMY_W);
             }
-            else if (g_Enemies[i].pattern == PATT_DIAGONAL)
+            else if (e->pattern == PATT_DIAGONAL)
             {
-                if      (g_Enemies[i].vx < 0 && g_Enemies[i].x <= GAME_X0)        g_Enemies[i].vx = 1;
-                else if (g_Enemies[i].vx > 0 && g_Enemies[i].x >= GAME_X1-ENEMY_W) g_Enemies[i].vx = -1;
-                else g_Enemies[i].x = (u8)((i8)g_Enemies[i].x + g_Enemies[i].vx);
+                if      (e->vx < 0 && e->x <= GAME_X0)        e->vx = 1;
+                else if (e->vx > 0 && e->x >= GAME_X1-ENEMY_W) e->vx = -1;
+                else e->x = (u8)((i8)e->x + e->vx);
             }
 
-            if (g_Enemies[i].type == ENEMY_TYPE_BOMBER)
+            if (e->type == ENEMY_TYPE_BOMBER)
             {
-                if (g_Enemies[i].fire_cd) g_Enemies[i].fire_cd--;
+                if (e->fire_cd) e->fire_cd--;
                 else BomberFireVolley(i);
             }
-            else if (g_Enemies[i].type == ENEMY_TYPE_HEAVY)
+            else if (e->type == ENEMY_TYPE_HEAVY)
             {
                 if (!g_EnemyShots[i].cd)
                 {
                     u8 k = AllocEnemyShotSlot();
                     if (k != 255)
                     {
-                        u8 bx = (u8)(g_Enemies[i].x + ENEMY_W / 2 - 1);
+                        u8 bx = (u8)(e->x + ENEMY_W / 2 - 1);
                         g_EnemyShots[k].active = 1;
                         g_EnemyShots[k].x = bx;
-                        g_EnemyShots[k].y = (u8)(g_Enemies[i].y + ENEMY_H);
+                        g_EnemyShots[k].y = (u8)(e->y + ENEMY_H);
                         g_EnemyShots[k].vx = enemyShotAimVX(bx);
                         g_EnemyShots[k].vy = ENEMYSHOT_SPEED_Y;
                         g_EnemyShots[k].pattern = 12;
@@ -1798,13 +1793,13 @@ void UpdateEnemies()
             {
                 if (!g_EnemyShots[i].active && !g_EnemyShots[i].cd)
                 {
-                    u8 bx = (u8)(g_Enemies[i].x + ENEMY_W / 2 - 1);
+                    u8 bx = (u8)(e->x + ENEMY_W / 2 - 1);
                     g_EnemyShots[i].active = 1;
                     g_EnemyShots[i].x = bx;
-                    g_EnemyShots[i].y = (u8)(g_Enemies[i].y + ENEMY_H);
+                    g_EnemyShots[i].y = (u8)(e->y + ENEMY_H);
                     g_EnemyShots[i].pattern = 12;
                     g_EnemyShots[i].type = ENEMYSHOT_TYPE_BULLET;
-                    if (g_Enemies[i].type == ENEMY_TYPE_DIVER)
+                    if (e->type == ENEMY_TYPE_DIVER)
                     {
                         g_EnemyShots[i].vx = enemyShotAimVXDiver(bx);
                         g_EnemyShots[i].vy = (u8)(ENEMYSHOT_SPEED_Y + 1u);
@@ -1821,7 +1816,7 @@ void UpdateEnemies()
             }
         }
 
-        if (g_Enemies[i].y >= SCREEN_H) { g_Enemies[i].active = 0; continue; }
+        if (e->y >= SCREEN_H) { e->active = 0; continue; }
     }
 
     // Actualitza dispars enemics
@@ -3157,6 +3152,7 @@ void ResetGameSession()
     u8 i;
     // 1:1 CPC: resetGameSession
     g_Score       = 0;
+    g_NextLifeAt  = EXTRA_LIFE_EVERY;
     g_Lives       = 2;
     g_Level       = 1;
     g_CurrentBiome = 0;
@@ -3542,22 +3538,23 @@ void main()
                       }
                   }
 
-                 // Desactiva sprites que sobren (Y=208 = off-screen)
-                 // Cache: només desactivar sprites que no ho estaven ja
-                 static u8 last_spr_count = 32;
-                 u8 start_disable = (spr < last_spr_count) ? spr : last_spr_count;
-                 while (spr < 32)
+                 // Desactiva sprites que han desaparegut respecte el frame anterior
+                 static u8 last_max_spr = 0;
+                 if (spr < last_max_spr)
                  {
-                     g_SprBuf[spr*4+0] = VDP_SPRITE_DISABLE_SM1;
-                     g_SprBuf[spr*4+1] = 0;
-                     g_SprBuf[spr*4+2] = 0;
-                     g_SprBuf[spr*4+3] = 0;
-                     spr++;
+                     while (spr < last_max_spr)
+                     {
+                         g_SprBuf[spr*4+0] = VDP_SPRITE_DISABLE_SM1;
+                         g_SprBuf[spr*4+1] = 0;
+                         g_SprBuf[spr*4+2] = 0;
+                         g_SprBuf[spr*4+3] = 0;
+                         spr++;
+                     }
                  }
-                 last_spr_count = start_disable;
+                 last_max_spr = spr;
 
-                  // Batch write all 32 sprites to VRAM en un sol cop
-                  VDP_WriteVRAM(g_SprBuf, g_SpriteAttributeLow, g_SpriteAttributeHigh, 128);
+                  // Batch write sprite attributes to VRAM (només els slots necessaris)
+                  VDP_WriteVRAM(g_SprBuf, g_SpriteAttributeLow, g_SpriteAttributeHigh, spr * 4);
               }
                else
                {
