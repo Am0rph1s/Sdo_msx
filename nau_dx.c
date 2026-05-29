@@ -2838,13 +2838,11 @@ void HudDrawHLine(u8 col, u8 row, u8 len, u8 colorByte)
 
 void UpdateMenuInput()
 {
-    u8 row8 = Keyboard_Read(8);
-    u8 row5 = Keyboard_Read(5);
     u8 row0 = Keyboard_Read(0); // tecles 1, 2, 3
     u8 joy_state = JOY_STATE();
     u8 joy_dir   = joy_state & JOY_INPUT_DIR_MASK;
     u8 joy_fire  = joy_state & JOY_INPUT_TRIGGER_A;
-    u8 kbd_fire = IS_KEY_PRESSED(row8, KEY_SPACE) || IS_KEY_PRESSED(row5, KEY_Z);
+    u8 kbd_fire = IsKeyPressed(g_KeyFire);
     u8 fire  = g_ControlMode ? kbd_fire : joy_fire;  // Only check input matching selected mode
 
     g_BlinkCtr++;
@@ -2962,23 +2960,23 @@ void UpdateMenuInput()
 
         if (key_cd > 0) { key_cd--; return; }
 
-        if (IS_KEY_PRESSED(row8, KEY_UP) || (joy_dir & JOY_INPUT_DIR_UP))
+        if ((g_ControlMode ? IsKeyPressed(g_KeyUp) : (joy_dir & JOY_INPUT_DIR_UP)))
         {
             g_HsInputChar[g_HsInputPos] = (g_HsInputChar[g_HsInputPos] >= 'Z') ? 'A' :
                                            (u8)(g_HsInputChar[g_HsInputPos] + 1);
             g_TitleDirty = 1; key_cd = 8;
         }
-        else if (IS_KEY_PRESSED(row8, KEY_DOWN) || (joy_dir & JOY_INPUT_DIR_DOWN))
+        else if ((g_ControlMode ? IsKeyPressed(g_KeyDown) : (joy_dir & JOY_INPUT_DIR_DOWN)))
         {
             g_HsInputChar[g_HsInputPos] = (g_HsInputChar[g_HsInputPos] <= 'A') ? 'Z' :
                                            (u8)(g_HsInputChar[g_HsInputPos] - 1);
             g_TitleDirty = 1; key_cd = 8;
         }
-        else if ((IS_KEY_PRESSED(row8, KEY_RIGHT) || (joy_dir & JOY_INPUT_DIR_RIGHT)) && g_HsInputPos < 2)
+        else if ((g_ControlMode ? IsKeyPressed(g_KeyRight) : (joy_dir & JOY_INPUT_DIR_RIGHT)) && g_HsInputPos < 2)
         {
             g_HsInputPos++; g_TitleDirty = 1; key_cd = 8;
         }
-        else if ((IS_KEY_PRESSED(row8, KEY_LEFT) || (joy_dir & JOY_INPUT_DIR_LEFT)) && g_HsInputPos > 0)
+        else if ((g_ControlMode ? IsKeyPressed(g_KeyLeft) : (joy_dir & JOY_INPUT_DIR_LEFT)) && g_HsInputPos > 0)
         {
             g_HsInputPos--; g_TitleDirty = 1; key_cd = 8;
         }
