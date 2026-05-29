@@ -86,8 +86,8 @@ static void MusicTick(u8 step)
     PSG_SetRegister(5, (u8)((per >> 8) & 0x0F));
     PSG_SetRegister(10, MUSIC_VOL_C);
 
-    // Mixer: enable all 3 tone channels, disable noise, Port A=input (bit6=1) to not break joystick
-    PSG_SetRegister(7, 0xF8);
+    // Mixer: enable all 3 tone channels, disable noise, Port A/B=input (safe for old HW)
+    PSG_SetRegister(7, 0x38);
 }
 
 static void MusicSilence(void)
@@ -95,7 +95,7 @@ static void MusicSilence(void)
     PSG_SetRegister(8, 0);
     PSG_SetRegister(9, 0);
     PSG_SetRegister(10, 0);
-    PSG_SetRegister(7, 0xBF);
+    PSG_SetRegister(7, 0x3F);
 }
 
 void main()
