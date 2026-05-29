@@ -1513,10 +1513,10 @@ static u8 BossTierFromLevel(u8 lv)
 
 static u8 BossBulletVyFromTier(u8 tier)
 {
-    // Cap bullet speed at tier 2 (level 15) - higher tiers use HP for difficulty
+    // Cap bullet speed — reduced for 60fps performance
     u8 t = tier;
-    if (t > 2) t = 2;
-    u8 v = (u8)(ENEMYSHOT_SPEED_Y + t);
+    if (t > 1) t = 1;
+    u8 v = (u8)(ENEMYSHOT_SPEED_Y - 1 + t);
     return v;
 }
 
