@@ -325,6 +325,8 @@ static u8  g_WaveIndianDelay = 0;
 static u8  g_BonusDisplayCnt = 0;  // Comptador per mostrar "XN" al completar wave
 static u16 g_WaveBonusBase = 10;
 static u8  g_SprBuf[128];  // Sprite attribute buffer (32 × 4 bytes)
+static bool g_Is60Hz = false;  // Frame-skip: true si 60Hz (cal saltar 1/6 frames)
+static u8   g_Frame6 = 0;      // Comptador 0-5 per frame-skip 60→50
 static u8  g_WaveSlotX[WAVE_PLAN_MAX];
 static u8  g_WaveSlotY[WAVE_PLAN_MAX];
 static u8  g_WaveSlotType[WAVE_PLAN_MAX];
@@ -897,13 +899,13 @@ void UpdateHUD()
                 HudDrawText(HUD_COL, row, "HP", HUD_FONT_COLOR_HI);
             if (full || last_has_boss != boss_count || *last != bf)
                 for (t = 0; t < 5; t++)
-                    VDP_Poke_GM2((u8)(HUD_COL + 3 + t), row, (t < bf) ? BAR_FILL_TILE : 0);
+                    VDP_Poke_GM2((u8)(HUD_COL + 2 + t), row, (t < bf) ? BAR_FILL_TILE : 0);
             *last = bf;
         }
         if (full || last_has_boss != boss_count)
         {
-            if (boss_count < 2) HudDrawText(HUD_COL, 19, "          ", HUD_FONT_COLOR_NRM);
-            if (boss_count < 1) HudDrawText(HUD_COL, 17, "          ", HUD_FONT_COLOR_NRM);
+            if (boss_count < 2) HudDrawText(HUD_COL, 19, "       ", HUD_FONT_COLOR_NRM);
+            if (boss_count < 1) HudDrawText(HUD_COL, 17, "       ", HUD_FONT_COLOR_NRM);
         }
         last_has_boss = boss_count;
     }
@@ -3263,6 +3265,9 @@ void main()
 
     VDP_SetSpritePositionY(0, VDP_SPRITE_DISABLE_SM1);
 
+    // Detecta freqüència per frame-skip (bloquejar a 50Hz a màquines 60Hz)
+    g_Is60Hz = Sys_Is60Hz();
+
     // Mostra menu inicial
     g_GameState  = GS_TITLE;
     g_TitleMode  = TS_MENU;
@@ -3277,6 +3282,11 @@ void main()
     while (1)
     {
         Halt();
+        // Frame-skip 60→50 Hz: saltar 1 de cada 6 frames a màquines 60Hz
+        if (g_Is60Hz)
+        {
+            if (++g_Frame6 >= 6) { g_Frame6 = 0; continue; }
+        }
          row8 = Keyboard_Read(8);
          row5 = Keyboard_Read(5);
 
@@ -3516,7 +3526,7 @@ void main()
                     // Enemies - WHITE layer first (shapes, high priority)
                   {
                       static const u8 etype_pat_w[5] = {16, 24, 32, 40, 48};
-                      static const u8 etype_col_w[5] = {COLOR_CYAN, COLOR_CYAN, COLOR_GRAY, COLOR_LIGHT_GREEN, COLOR_WHITE};
+                      static const u8 etype_col_w[5] = {COLOR_CYAN, COLOR_LIGHT_YELLOW, COLOR_GRAY, COLOR_LIGHT_GREEN, COLOR_WHITE};
                       for (i = 0; i < MAX_ENEMIES && spr < 28; i++)
                       {
                           if (!g_Enemies[i].active) continue;

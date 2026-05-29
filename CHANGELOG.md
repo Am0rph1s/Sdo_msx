@@ -45,9 +45,10 @@
 
 ## Pendent
 
-- [ ] **HP bar column clamp** — re-aplicar sense trencar res
-- [ ] **Wave overlap fix** (n=5) — re-aplicar sense trencar res  
-- [ ] Identificar quin dels dos canvis anteriors va causar la corrupció
+- [x] **HP bar column clamp** — corregit: barra ara comença a col 27 (abans col 28-32 desbordava)
+- [x] **HUD clear strings** — corregit: cadenes de neteja limitades a 7 caràcters (abans 10 feien wrap a col 0)
+- [ ] **Wave overlap fix** (n=5) — ja estava correcte, no era la causa de la corrupció
+- [x] **Bloqueig a 50 Hz** — implementat frame-skip 1/6 a màquines 60Hz per consistència de velocitat
 - [ ] Provar bales grogues (alternativa al vermell per contrast)
 - [ ] Generar ROM amb intro (nau_dx_intro.rom)
 - [ ] Test en hardware real (HB-75P)
