@@ -1,4 +1,4 @@
-ProjName = "nau_dx_intro";
+ProjName = "sdo";
 ProjModules = [ "nau_dx_intro" ];
 LibModules = [ "system", "bios", "vdp", "print", "input", "psg" ];
 Machine = "1";
